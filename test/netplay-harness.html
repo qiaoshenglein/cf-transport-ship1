@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>NET</title>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/addons/"}}</script>
+</head>
+<body style="background:#0a0e12;color:#dfe4e8;font:13px monospace">
+<canvas id="c"></canvas><div id="ui"></div><pre id="out"></pre>
+<script type="module">
+import * as THREE from 'three';
+import { NetGame } from '/src/netplay.js';
+import { loadMap } from '/server/mapdata.js';
+
+const out = document.getElementById('out');
+const say = (s) => { out.textContent += s + '\n'; };
+let P = 0, F = 0;
+const ok = (c, n, x = '') => { c ? (P++, say('PASS ' + n)) : (F++, say('FAIL ' + n + ' ' + x)); };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const world = loadMap().world;
+
+function stubGame() {
+  const g = {
+    time: 0, frame: 0, playing: false, paused: false, ended: false, net: null, inLoadout: false,
+    actors: [], tags: [], score: { BL: 0, GR: 0 }, goal: 50, timeLeft: 600,
+    qs: new URLSearchParams(location.search),
+    opts: { sens: 1, fov: 78, vol: 0, primary: 'ak47' },
+    renderer: { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(78, 1.6, 0.05, 400) },
+    world,
+    fx: { muzzle() {}, tracer() {}, impact() {}, explosion() {}, light() {}, bloodSplat() {}, shake: 0 },
+    vm: { equip() {}, setVisible() {}, fire() {}, melee() {}, reload() {}, throwNade() {}, inspect() {}, setTeam() {} },
+    hud: { toast() {}, slots() {}, update() {}, drawRadar() {}, scoreboard() {}, killFeed() {}, hitmarker() {}, damageFrom() {}, badge() {}, show() {}, el: { menu: { classList: { add() {}, remove() {}, toggle() {} } } } },
+    audio: { playUI() {} },
+    aimTarget: null, dmgFlash: 0, killedBy: null,
+    lock() {},
+    addTag(a) { const sp = { visible: false, position: new THREE.Vector3() }; g.tags.push({ sprite: sp, actor: a }); },
+    onJump() {}, onLand() {}, onFootstep() {}, onReloadStart() {}, onReloadDone() {}, onScope() {}, onDryFire() {}, onGrenadeStart() {}, onSwitch() {},
+    toggleLoadout() {},
+  };
+  return g;
+}
+
+const drv = [];
+function drive(ng) {
+  const iv = setInterval(() => {
+    if (!ng.me || !ng.inMatch) return;
+    try { ng.update(1 / 30); } catch (e) { say('ERR update: ' + (e && e.stack || e)); F++; }
+  }, 33);
+  drv.push(iv);
+}
+
+try {
+  // ---------- 大厅 UI ----------
+  const gA = stubGame(), gB = stubGame();
+  const A = new NetGame(gA), B = new NetGame(gB);
+  const lobby = A.ensureLobby();
+  ok(!!lobby.querySelector('#roomList') && !!lobby.querySelector('#netName'), '大厅 DOM 构建');
+  A.renderRooms([{ id: '1', name: '演示房', n: 3, max: 8, bl: 1, gr: 2, goal: 50, state: 'play', timeLeft: 40 }]);
+  ok(lobby.querySelector('#roomList').innerHTML.includes('演示房'), '房间列表渲染');
+
+  // ---------- 连接 / 建房 / 加入 ----------
+  await A.connect(); A.helloMsg(); await sleep(300);
+  A.send({ t: 'create', name: '浏览器测试房', goal: 50, max: 8, primary: 'ak47' });
+  for (let i = 0; i < 40 && !A.inMatch; i++) await sleep(100);
+  ok(A.inMatch && gA.playing && A.me, 'A 建房进入对局');
+  drive(A);
+
+  await B.connect(); try { sessionStorage.removeItem('cf_ticket'); } catch (e) {} B.helloMsg(); await sleep(200);
+  B.send({ t: 'quick' });
+  for (let i = 0; i < 40 && !B.inMatch; i++) await sleep(100);
+  drive(B);
+  ok(B.inMatch, 'B 快速匹配进入');
+  for (let i = 0; i < 40 && !(A.remotes.size === 1 && B.remotes.size === 1); i++) await sleep(100);
+  ok(A.remotes.size === 1 && B.remotes.size === 1, '互相看到对方角色');
+
+  // ---------- 移动预测 + 服务端和解 + 远端插值 ----------
+  const aId = A.myId, bR = B.remotes.get(aId);
+  const b0 = bR ? bR.pos.clone() : new THREE.Vector3();
+  A.me.keys.add('KeyW');
+  await sleep(2500);
+  ok(A.me.ack > 30, '输入被服务端确认', `ack=${A.me.ack}`);
+  const b1 = B.remotes.get(aId);
+  const seenMoved = b1 && b1.pos.distanceTo(b0) > 2;
+  ok(seenMoved, 'B 端看到 A 移动（插值）', `d=${b1 ? b1.pos.distanceTo(b0).toFixed(2) : 'none'}`);
+  ok(A.pending.length < 40, 'pending 队列被和解消化', `len=${A.pending.length}`);
+  A.me.keys.delete('KeyW');
+
+  // ---------- 射击预测（弹耗、无回滚异常） ----------
+  const mag0 = A.me.inv[0].mag;
+  A.me.mouse.l = true; A.me.mouse.lp = true;
+  await sleep(800);
+  A.me.mouse.l = false;
+  ok(A.me.inv[0].mag < mag0, '开火消耗弹匣', `${mag0}->${A.me.inv[0].mag}`);
+  await sleep(500);
+  ok(A.pending.length < 40, '射击后预测仍收敛', `pending=${A.pending.length}`);
+
+  // ---------- 断线自动重连 ----------
+  A.ws.close();
+  for (let i = 0; i < 60 && A.reconnecting; i++) await sleep(200);
+  ok(!A.reconnecting && A.inMatch, 'A 断线后自动重连成功');
+  ok(Math.hypot(A.me.pos.x - (A.lastSnap ? A.lastSnap.me.x : A.me.pos.x), A.me.pos.z - (A.lastSnap ? A.lastSnap.me.z : A.me.pos.z)) < 5, '重连后位置连续');
+  const sawRejoin = await new Promise((res) => {
+    const old = B.onEvent.bind(B);
+    let got = false;
+    B.onEvent = (e) => { if (e.e === 'rejoin') got = true; old(e); };
+    setTimeout(() => { B.onEvent = old; res(got); }, 1500);
+  });
+  ok(sawRejoin || B.remotes.size === 1, 'B 感知 A 重连（事件或席位保持）');
+
+  // ---------- 退出 ----------
+  {
+    const oldSnap = B.onSnap.bind(B);
+    const seen = [];
+    B.onSnap = (m) => { if (m.ev) for (const e of m.ev) seen.push(e.e + (e.id !== undefined ? ':' + e.id : '')); if (m.roster) seen.push('roster:' + m.roster.length); oldSnap(m); };
+    A.leave();
+    for (let i = 0; i < 60 && B.remotes.size > 0; i++) await sleep(100);
+    say('DEBUG B 收到: ' + [...new Set(seen)].slice(-12).join(' '));
+    say('DEBUG B.remotes=' + B.remotes.size + ' B.inMatch=' + B.inMatch + ' A.inMatch=' + A.inMatch);
+    ok(!A.inMatch && B.remotes.size === 0, '离开后房间名册同步');
+  }
+
+  B.leave();
+  drv.forEach(clearInterval);
+} catch (e) {
+  say('FATAL ' + (e && e.stack || e)); F++;
+}
+say(`RESULT ${P} ${F}`);
+document.title = 'NETDONE';
+</script>
+</body></html>
