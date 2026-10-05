@@ -6,15 +6,18 @@
 
 **Windows**：安装 [Node.js LTS ≥ 18](https://nodejs.org/)，双击 `start-server.bat`。
 
-**Linux / macOS / Git Bash**：安装 Node.js ≥ 18 后：
+**Linux / macOS / Git Bash**：安装 Node.js ≥ 18 后使用运维脚本（自动装依赖 + 构建 + 启动）：
 ```bash
-chmod +x start-server.sh   # 仅需一次
-./start-server.sh          # 默认 8080；自定义：PORT=9000 ./start-server.sh
-# 后台常驻：nohup ./start-server.sh > ship.log 2>&1 &
+bash deploy/start.sh              # 前台启动（Ctrl+C 停止）
+bash deploy/start.sh -d           # 后台启动（日志 deploy/cf-ship.log，PID 见 deploy/cf-ship.pid）
+bash deploy/start.sh --status     # 运行状态 + /healthz 健康检查 + 当前房间列表
+bash deploy/start.sh --logs       # 跟踪日志
+bash deploy/start.sh --stop       # 停止（按 PID 文件 + 端口反查双重兜底）
+sudo bash deploy/start.sh --install    # 安装为 systemd 服务（开机自启、崩溃 3 秒自拉）
+sudo bash deploy/start.sh --uninstall  # 卸载 systemd 服务
 ```
-
-两者都会自动完成：装依赖 → 构建前端 → 启动服务。
-浏览器打开控制台打印的地址（默认 `http://localhost:8080`），点主菜单「联 机 对 战」即可进房开战；把局域网/公网地址发给朋友即可多人游玩。
+配置放在 `deploy/.env`（参考 `deploy/.env.example`）：`PORT / HOST / MAX_ROOMS / DEV_SRC`。
+浏览器打开 `http://<服务器IP>:8080`，点主菜单「联 机 对 战」即可进房开战。
 
 ## 二、外网服务器部署
 
@@ -25,12 +28,13 @@ netsh advfirewall firewall add rule name="cf-ship-8080" dir=in action=allow prot
 云服务器（阿里云/腾讯云/AWS 等）还需在控制台「安全组」放行 TCP 8080 入站。
 
 ### 2. 上传代码
-把整个项目目录拷到服务器（可不含 `node_modules`、`dist`，首次启动会自动生成）。Windows 双击 `start-server.bat`；Linux 运行 `./start-server.sh`（可配合 `nohup` 或下方 systemd/NSSM 守护）。
+把整个项目目录拷到服务器（可不含 `node_modules`、`dist`，首次启动会自动生成）。Windows 双击 `start-server.bat`；Linux 运行 `bash deploy/start.sh -d`（详见上文「最快上手」）。
 
-### 3. 后台常驻运行（三选一）
-- **简单**：任务计划程序（Task Scheduler）新建任务，操作填 `node.exe "D:\game\cf-transport-ship1\server\index.js"`，勾选"故障时重启"。
-- **可靠**：安装 [NSSM](https://nssm.cc/)，`nssm install CFShip "node" "server\index.js"`，服务自动随系统启动并守护进程。
-- **调试**：直接开一个 PowerShell 窗口运行，或用 `pm2`（`npm i -g pm2; pm2 start server/index.js --name cfship`）。
+### 3. 后台常驻运行
+- **推荐（Linux）**：`sudo bash deploy/start.sh --install`——安装为 systemd 服务（`cf-ship`），开机自启、崩溃 3 秒自拉；管理用 `systemctl status cf-ship` / `journalctl -u cf-ship -f`（日志同时写 `deploy/cf-ship.log`）。
+- **简单**：`bash deploy/start.sh -d` 后台启动，`--stop` 停止。
+- **Windows**：任务计划程序新建任务，操作填 `node.exe "D:\game\cf-transport-ship1\server\index.js"`，勾选"故障时重启"；或安装 [NSSM](https://nssm.cc/)：`nssm install CFShip "node" "server\index.js"`。
+- **调试**：`pm2`（`npm i -g pm2; pm2 start server/index.js --name cfship`）。
 
 ### 4. 环境变量（可选）
 | 变量 | 默认 | 说明 |

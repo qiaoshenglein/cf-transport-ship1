@@ -1,0 +1,24 @@
+[Unit]
+Description=CF Transport Ship multiplayer server (穿越火线 运输船 联机服务端)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__DIR__
+ExecStart=__NODE__ __DIR__/server/index.js
+Environment=PORT=__PORT__
+Environment=HOST=0.0.0.0
+EnvironmentFile=-__DIR__/deploy/.env
+Restart=always
+RestartSec=3
+StandardOutput=append:__DIR__/deploy/cf-ship.log
+StandardError=append:__DIR__/deploy/cf-ship.log
+
+# 基础加固
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
