@@ -188,13 +188,15 @@ try {
     const nearBones = (sol) => {
       sol.root.position.set(0, 0, 0); sol.root.rotation.set(0, 0, 0);
       sol.mesh.position.set(0, 0, 0); sol.mesh.updateMatrixWorld(true);
+      // 容差跟着体型走：配件的挂载偏移会随巨体等比放大，固定 1 米会误判成飘件
+      const lim = 0.55 * (sol.mesh.scale.y || 1) + 0.2;
       const bm = new THREE.Box3();
       let bad = 0;
       for (const m of sol.extras) {
         if (!m.parent || !m.parent.isBone || !m.geometry) continue;
         bm.setFromObject(m);
         if (bm.isEmpty()) continue;
-        if (bm.getCenter(new THREE.Vector3()).distanceTo(m.parent.getWorldPosition(new THREE.Vector3())) > 1.0) bad++;
+        if (bm.getCenter(new THREE.Vector3()).distanceTo(m.parent.getWorldPosition(new THREE.Vector3())) > lim) bad++;
       }
       return bad;
     };
@@ -217,6 +219,16 @@ try {
     ok(b2.soldier.fxRefs.light.o === lamp, '第二只 BOSS 复用同一盏动态灯');
     let lightN = 0; gL.renderer.scene.traverse((o) => { if (o.isLight) lightN++; });
     ok(lightN === 1, '场景里始终只有这一盏动态灯', `n=${lightN}`);
+    // 挂在骨骼上的光晕 / 配件会被"巨体缩放"二次放大，必须补偿回设计米数：
+    // 母体不补偿时光片横向 11 米，登场瞬间全屏加性高光，所有客户端直接卡死
+    const exLen = (o) => { const e = o.matrixWorld.elements; return [Math.hypot(e[0], e[1], e[2]), Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10])]; };
+    b2.soldier.root.position.set(0, 0, 0); b2.soldier.root.updateWorldMatrix(true, true);
+    const haloLen = exLen(b2.soldier.fxRefs.halo.o);
+    ok(Math.abs(haloLen[0] - LOOKS.mother.halo.s) < 0.4 && Math.abs(haloLen[1] - LOOKS.mother.halo.s) < 0.4, '母体光晕按设计米数落地（横向没有被巨体放大 3 倍）', `${haloLen[0].toFixed(2)}x${haloLen[1].toFixed(2)}m`);
+    const accLen = exLen(b2.soldier.extras.find((m) => m.parent && m.parent.isBone));
+    const MS = LOOKS.mother.scale;
+    ok(Math.abs(accLen[0] - MS) < 0.06 && Math.abs(accLen[1] - MS) < 0.06 && Math.abs(accLen[2] - MS) < 0.06, '母体轮廓件随体型等比放大（酸囊盖得住巨腹）', `${accLen.map((v) => v.toFixed(2)).join('/')}`);
+    ok(LOOKS.mother.beam.h <= 7 && LOOKS.tyran.beam.h <= 7, '天光柱高度收在 7 米内（够醒目又不糊屏）', `${LOOKS.mother.beam.h}`);
     L.dropRemote(9102);
     ok(lamp.intensity === 0 && !lamp.parent, '持灯 BOSS 退场后灯归位、强度归零');
     bump(boss.soldier, 1); boss.soldier.update(0.016, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
@@ -279,6 +291,49 @@ try {
   ok(pveRow.includes('PVE 困难') && pveRow.includes('第 4 波') && !pveRow.includes('潜伏'), '房间列表标注 PVE 波次/难度');
   A.renderRooms([{ id: '3', name: 'BOSS房', n: 2, max: 8, goal: 50, state: 'play', timeLeft: 300, mode: 'pve', diff: 'hell', wave: 7, score: { BL: 88, GR: 5 }, boss: { k: 'mother', nm: '瘟疫母体', hp: 1500, hpMax: 3000, by: 1, who: '老王' } }]);
   ok(lobby.querySelector('#roomList').innerHTML.includes('⚠ 瘟疫母体') && lobby.querySelector('#roomList').innerHTML.includes('玩家附身'), '房间列表显示 BOSS 与"玩家附身"');
+
+  // ---------- 多地图：注册表 / 浏览器侧建图 / 选图 UI ----------
+  try {
+    const { World } = await import('/src/physics.js');
+    const { MAPS, MAP_IDS, mapOf, suppliesForMap } = await import('/src/maps.js');
+    const { CONTAINER_COLORS } = await import('/src/textures.js');
+    ok(MAP_IDS.length >= 3 && MAP_IDS.every((id) => MAPS[id].name && MAPS[id].build && MAPS[id].bounds.length === 4 && MAPS[id].radar.w && MAPS[id].pve.spawns), '地图注册表：每张图都有名字 / 建造函数 / 范围 / 雷达 / PVE 要点');
+    const texSet = { map: null, normalMap: null, roughnessMap: null, emissiveMap: null };
+    // 贴图生成写进普通对象：桩 Proxy 对未知键返回真值对象，会让 `if (T.贴图名) return` 直接短路
+    const gen = {};
+    const base = {
+      containers: CONTAINER_COLORS.map((color) => ({ color, side20: null, side40: null, n20: null, n40: null, door: null, doorN: null, roof: null, roofN: null })),
+      crates: [0, 1, 2, 3].map(() => ({ ...texSet, kind: 'wood' })).concat([0, 1].map(() => ({ ...texSet, kind: 'metal' }))),
+    };
+    const built = {};
+    for (const id of MAP_IDS.filter((k) => k !== 'ship')) {
+      const def = mapOf(id);
+      def.textures(gen, 'low');                       // 贴图生成只在浏览器跑（服务端走贴图桩）
+      const T2 = new Proxy(Object.assign({}, base, gen), { get: (t, k) => (k in t ? t[k] : texSet) });
+      const root = new THREE.Group(), w2 = new World();
+      const m = def.build(root, T2, w2, {});
+      built[id] = { m, w2, root };
+      const nCol = w2.colliders.length;
+      const ground = w2.colliders.some((c) => c.tag === 'deck');
+      const spawnOK = m.spawns.BL.length === 10 && m.spawns.GR.length === 10 && m.spawns.BL.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z) && Number.isFinite(p.yaw));
+      ok(nCol > 12 && ground && spawnOK && typeof m.update === 'function', `${def.name}：浏览器侧建图成功`, `碰撞体 ${nCol}，补给 ${suppliesForMap(id).length}`);
+    }
+    const sandTx = gen.sandStone && gen.sandStone.map, plasTx = gen.plaster && gen.plaster.map;
+    ok(!!(sandTx && sandTx.isTexture && sandTx.image.width >= 64 && plasTx && plasTx.isTexture && gen.sandGround.normalMap.isTexture), '新地图程序生成贴图（沙岩 / 灰泥 / 石板）真的产出画布纹理');
+    ok(!!lobby.querySelector('.seg[data-kg="map"]') && lobby.querySelectorAll('.seg[data-kg="map"] button').length === MAP_IDS.length, '大厅有地图选择器且与注册表同步');
+    const dBtn = lobby.querySelector('.seg[data-kg="map"] button[data-v="' + MAP_IDS[1] + '"]');
+    dBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    ok(dBtn.classList.contains('on') && lobby.querySelector('#mapDesc').textContent === MAPS[MAP_IDS[1]].desc, '选图会高亮并刷新地图说明');
+    lobby.querySelector('.seg[data-kg="map"] button[data-v="ship"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    A.renderRooms([{ id: '4', name: '沙房', n: 2, max: 8, goal: 50, state: 'play', timeLeft: 300, map: 'desert', mn: '沙漠灰', bl: 1, gr: 1, score: { BL: 1, GR: 1 } }]);
+    ok(lobby.querySelector('#roomList').innerHTML.includes('沙漠灰'), '房间列表标出地图名');
+    const hudR = new HUD(stubGame());
+    hudR.buildRadar(built[MAP_IDS[1]].w2, MAPS[MAP_IDS[1]]);
+    const lbl = hudR.root.querySelector('#radarWrap .lbl');
+    ok(hudR.radarImg.width === MAPS[MAP_IDS[1]].radar.w * 8 && hudR.radarOX === MAPS[MAP_IDS[1]].radar.w / 2 && lbl.textContent === MAPS[MAP_IDS[1]].name, '雷达按新地图长宽重建并改标题', `${hudR.radarImg.width}px / ${lbl.textContent}`);
+    hudR.buildRadar(new World(), MAPS.ship);
+    ok(hudR.radarImg.width === MAPS.ship.radar.w * 8 && hudR.root.querySelector('#radarWrap .lbl').textContent === '运输船', '换回运输船时雷达同步还原');
+  } catch (e) { ok(false, '多地图', String(e).slice(0, 220)); }
 
   // ---------- 连接 / 建房 / 加入 ----------
   await A.connect(); A.helloMsg(); await sleep(300);

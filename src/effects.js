@@ -13,7 +13,9 @@ class Particles {
     this.mat = new THREE.ShaderMaterial({
       uniforms: { map: { value: tex }, scale: { value: 800 } },
       vertexShader: `attribute float size; attribute vec4 color; varying vec4 vC; uniform float scale;
-        void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position,1.0); gl_PointSize = size * scale / max(0.1, -mv.z); gl_Position = projectionMatrix * mv; }`,
+        void main(){ vC = color; vec4 mv = modelViewMatrix * vec4(position,1.0);
+          // 近处的巨型粒子（爆炸火球能长到 7m）若不封顶，单个 point 就铺满整屏，加性混合直接把帧率打穿
+          gl_PointSize = min(420.0, size * scale / max(0.1, -mv.z)); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: `uniform sampler2D map; varying vec4 vC;
         void main(){ vec4 t = texture2D(map, gl_PointCoord); gl_FragColor = vec4(vC.rgb * t.rgb, vC.a * t.a);
         #include <tonemapping_fragment>
@@ -199,11 +201,13 @@ export class Effects {
     this.decals.scorch.add(new THREE.Vector3(p.x, 0.01, p.z), new THREE.Vector3(0, 1, 0), 3.2);
     this.shake = Math.max(this.shake, 1);
   }
-  // 烟囱排烟 & 海鸥
+  // 烟囱排烟 & 海鸥：只属于有船体的地图（新图传 null 就不放海鸥，免得城镇上空飞海鸟）
   initAmbient(funnelTop) {
+    if (!funnelTop) return;
     this.funnelTop = funnelTop;
     const birdMat = new THREE.MeshStandardMaterial({ color: 0xf2f2ee, roughness: 0.8, side: THREE.DoubleSide });
     const tipMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, side: THREE.DoubleSide });
+    this._birdMats = [birdMat, tipMat];
     for (let i = 0; i < 6; i++) {
       const b = new THREE.Group();
       const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.1, 0.35, 3, 6), birdMat); body.rotation.x = Math.PI / 2;
@@ -219,6 +223,22 @@ export class Effects {
       this.scene.add(b);
       this.birds.push({ g: b, wR: wrR, wL: wrL, r: 25 + Math.random() * 30, h: 18 + Math.random() * 16, sp: 0.18 + Math.random() * 0.12, ph: Math.random() * 6.28, cx: -10 + Math.random() * 30, flap: Math.random() * 6 });
     }
+  }
+  // 换图：收掉上一张图的环境体（海鸥 / 烟筒引用），否则海鸥会在小镇上空继续飞
+  clearAmbient() {
+    for (const b of this.birds) {
+      this.scene.remove(b.g);
+      b.g.traverse((o) => { if (o.isMesh && o.geometry) o.geometry.dispose(); });
+    }
+    this.birds = [];
+    for (const m of this._birdMats || []) m.dispose();
+    this._birdMats = null;
+    this.funnelTop = null;
+  }
+  // 换图：清掉上一张图留下的弹孔/血渍/焦痕，否则旧地图的弹孔会浮在小镇墙上
+  clearDecals() {
+    for (const k in this.decals) { const d = this.decals[k]; d.mesh.count = 0; d.i = 0; d.mesh.instanceMatrix.needsUpdate = true; }
+    this.tracers.length = 0; this.tracerMesh.count = 0; this.tracerMesh.instanceMatrix.needsUpdate = true;
   }
   update(dt, t, camera, shipSpeed) {
     this.add.update(dt); this.smoke.update(dt);

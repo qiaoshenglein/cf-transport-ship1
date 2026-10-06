@@ -5,6 +5,8 @@ import { packSelf, unpackSelf } from '../src/netsim.js';
 import { BOSSES, BOSS_KINDS, bossHpScale } from './bosses.js';
 import { boneMatrices, rayHitboxes } from '../src/hitbox.js';
 import { SIZE } from '../src/bosssize.js';
+import { MAP_IDS, mapOf, suppliesForMap } from '../src/maps.js';
+import { STAND_H } from '../src/movement.js';
 import { B, RESPAWN_TIME, RECONNECT_GRACE, PROTO_VERSION, decodeWorld, encodeWorld, WTABLE } from '../src/protocol.js';
 
 const DT = 1 / 30;
@@ -630,6 +632,44 @@ console.log('[7] BOSS 体型与命中盒');
   }
   room.releaseBoss(h, false);
   ok(room.hitScaleOf(h) === 1 && !!room.aliveBoss(), '交还 AI 后玩家回到人体型、BOSS 回场');
+  room.stop();
+}
+
+// ---------------- 8. 多地图：每张图都能建房、寻路、放怪、发补给 ----------------
+console.log('\n[8] 多地图（运输船 / 沙漠灰 / 黑色城镇）');
+for (const mapId of MAP_IDS) {
+  const mk = (n) => ({ name: n, conn: { readyState: 1 }, msgs: [], send(o) { this.msgs.push(o); }, sendBin() { } });
+  const room = new Room('t8' + mapId, { goal: 100, max: 8, mode: 'pve', diff: 'normal', map: mapId, onEmpty() { } });
+  const def = mapOf(mapId);
+  ok(room.mapId === mapId && room.mapName === def.name, `${def.name}：房间按选定地图加载世界`, `${room.mapId}/${room.world.colliders.length}`);
+  const a = room.addPlayer(mk('A'), { primary: 'ak47' });
+  const b = room.addPlayer(mk('B'), { primary: 'm4a1' });
+  const spB = room.spawns.BL[0], spG = room.spawns.GR[0];
+  ok(!!spB && !!spG && !room.world.blocked(spB.x, 0.06, spB.z, 0.42, STAND_H), `${def.name}：出生点可站立`, JSON.stringify(spB));
+  const cross = room.nav.findPath(spB.x, spB.z, spG.x, spG.z);
+  ok(!!cross && cross.length > 1, `${def.name}：双方基地之间有路`, cross ? `${cross.length} 段` : '无');
+  ok(suppliesForMap(mapId).length > 0 && room.supplies.length === suppliesForMap(mapId).length, `${def.name}：补给站按图配置`, `${room.supplies.length}`);
+  // 跑 20 秒：怪要能出生、能挪动，人不能被地形吞掉
+  room.wave = 1; room.pending = ['infected', 'infected', 'shooter']; room.waveLeft = 3; room.nextWaveAt = -1;
+  const mon0 = room.aliveMonsters();
+  for (const p of [a, b]) { p.hp = p.hpMax = 1e6; p.armor = 100; }
+  let ref = null;
+  for (let i = 0; i < 600; i++) {
+    room.step();
+    if (i === 60) ref = new Map([...room.monsters.values()].map((m) => [m.id, [m.pos.x, m.pos.z]]));
+  }
+  const mons = [...room.monsters.values()];
+  ok(room.aliveMonsters() > mon0, `${def.name}：怪口能持续出怪`, `${mons.length} 只`);
+  const moved = mons.filter((m) => { const r = ref && ref.get(m.id); return r && Math.hypot(m.pos.x - r[0], m.pos.z - r[1]) > 1.5; }).length;
+  ok(moved >= 1, `${def.name}：怪物寻路真的在走`, `${moved}/${mons.length}`);
+  ok(a.alive && b.alive && Math.abs(a.pos.y) < 1 && Math.abs(b.pos.y) < 1, `${def.name}：出生 20 秒后两名真人仍站在地形上`, `y=${a.pos.y.toFixed(2)}/${b.pos.y.toFixed(2)}`);
+  // 附身 BOSS 在新图上也要成立
+  const boss = room.spawnMonster('tyran');
+  if (boss) {
+    boss.hp = boss.hpMax = 900;
+    a.pos.x = boss.pos.x + 3; a.pos.z = boss.pos.z; a.hp = a.hpMax = 900; a.alive = true;
+    ok(room.takeBoss(a) === a && a.isBoss && room.hitScaleOf(a) === SIZE.tyran.h, `${def.name}：BOSS 附身与巨体判定可用`);
+  }
   room.stop();
 }
 

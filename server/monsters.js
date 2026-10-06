@@ -66,7 +66,8 @@ export class MonsterBrain {
     return !room.world.raycast(ex, ey, ez, dx / d, ((t.pos.y + 1.3) - ey) / d, dz / d, d - 0.1, 'sight');
   }
   repath(room, m, tgt) {
-    const p = PVE_SPAWNS[(rnd() * PVE_SPAWNS.length) | 0];
+    const pool = room.pveSpawns && room.pveSpawns.length ? room.pveSpawns : PVE_SPAWNS;
+    const p = pool[(rnd() * pool.length) | 0];
     const gx = tgt ? tgt.pos.x + (rnd() - 0.5) * 6 : p.x;
     const gz = tgt ? tgt.pos.z + (rnd() - 0.5) * 6 : p.z;
     this.path = room.nav.findPath(m.pos.x, m.pos.z, gx, gz);

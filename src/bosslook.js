@@ -91,8 +91,8 @@ export const LOOKS = {
     scale: SIZE.tyran.h, ws: SIZE.tyran.w, ds: SIZE.tyran.d, hit: 'metal', noGun: true, pulse: 1.1, beat: 3.4, bloom: 5.5,
     aura: { r: 4.4, c: 0xff4a1c },
     lamp: { b: 'chest', y: 0.14, z: -0.2, i: 52, dist: 19 },
-    halo: { b: 'chest', y: 0.14, z: -0.22, s: 2.6 },
-    beam: { h: 10, r1: 0.5, r2: 2.2 },
+    halo: { b: 'chest', y: 0.14, z: -0.22, s: 2.0 },
+    beam: { h: 6, r1: 0.35, r2: 1.2 },
     emit: { bone: 'chest', rate: 0.1, kind: 'ember', at: [[0.17, 0.52, 0.16], [-0.17, 0.52, 0.16]] },
     style: pose({ hunch: 0.2, lean: 0.1, swing: 0.9, rate: 0.78, bob: 0.5, armOut: 0.5, hipY: 0.01, head: -0.08 }),
     acc: (A, E) => [
@@ -119,8 +119,8 @@ export const LOOKS = {
     scale: SIZE.mother.h, ws: SIZE.mother.w, ds: SIZE.mother.d, hit: 'acid', pulse: 1.4, beat: 1.5, bloom: 6,
     aura: { r: 4.6, c: 0x74d94a },
     lamp: { b: 'hips', y: -0.06, z: -0.1, i: 46, dist: 17 },
-    halo: { b: 'hips', y: -0.06, z: -0.12, s: 3.4 },
-    beam: { h: 11, r1: 0.7, r2: 2.6 },
+    halo: { b: 'hips', y: -0.06, z: -0.12, s: 2.6 },
+    beam: { h: 6.5, r1: 0.5, r2: 1.4 },
     emit: { bone: 'chest', rate: 0.16, kind: 'acid', at: [[0.16, 0.24, 0.24], [-0.16, 0.2, 0.26], [0, -0.14, -0.3]] },
     style: pose({ hunch: 0.16, lean: -0.12, swing: 0.6, rate: 0.6, bob: 0.3, armOut: 0.44, hipY: 0.02, head: 0.12 }),
     acc: (A, E) => [
@@ -143,8 +143,8 @@ export const LOOKS = {
     scale: SIZE.shade.h, ws: SIZE.shade.w, ds: SIZE.shade.d, hit: 'flesh', noGun: true, pulse: 0.45, beat: 2.8, bloom: 5,
     aura: { r: 2.6, c: 0xa874ff },
     lamp: { b: 'chest', y: 0.12, z: -0.1, i: 34, dist: 14 },
-    halo: { b: 'head', y: 0.1, z: -0.12, s: 1.5 },
-    beam: { h: 9, r1: 0.35, r2: 1.5 },
+    halo: { b: 'head', y: 0.1, z: -0.12, s: 1.2 },
+    beam: { h: 5.5, r1: 0.25, r2: 0.85 },
     emit: { bone: 'chest', rate: 0.22, kind: 'wisp', at: [[0.16, 0.2, 0.12], [-0.14, 0.1, 0.16]] },
     style: pose({ hunch: 0.08, lean: 0.06, swing: 0.42, rate: 1.5, bob: 0.15, armOut: 0.2, float: 0.035, head: 0.06 }),
     acc: (A, E) => [
@@ -182,8 +182,9 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   body.emissive.setHex(L.emis); body.emissiveIntensity = L.ei;
   const s = L.scale * (possessed ? 1.04 : 1), ws = L.ws * (possessed ? 1.05 : 1), ds = L.ds;
   sol.mesh.scale.set(s * ws, s, s * ds);
-  // 骨骼链带着配件一起缩放，这里反向抵消，配件按设计尺寸落地
-  const cx = 1 / (s * ws), cy2 = 1 / s, cz = 1 / (s * ds);
+  // 骨骼链会带着配件一起缩放：这里只抵消横/纵/深的不比例，配件最终按"人体设计尺寸 × 体重 s"落地，
+  // 既盖得住巨体，又不会被拉成薄片
+  const ax = 1 / ws, ay = 1, az = 1 / ds;
   sol.style = L.style;
   sol.hitMat = L.hit || 'flesh';
   sol.hideGun = !!L.noGun;
@@ -197,7 +198,7 @@ export function dressSoldier(sol, key, possessed, optsIn) {
       if (!bone || !item.g.length) continue;
       const mat = item.m === 'E' ? EM : AM;
       const mesh = new THREE.Mesh(fuse(item.g), mat);
-      mesh.scale.set(cx, cy2, cz);
+      mesh.scale.set(ax, ay, az);
       mesh.castShadow = false; mesh.receiveShadow = false; mesh.frustumCulled = false;
       bone.add(mesh); extras.push(mesh);
     }
@@ -225,7 +226,7 @@ export function dressSoldier(sol, key, possessed, optsIn) {
     }
     orbit.position.set(0, 0.36, 0);
     sol.B.head.add(core); sol.B.head.add(orbit);
-    core.scale.set(cx, cy2, cz); orbit.scale.set(cx, cy2, cz);
+    core.scale.set(ax, ay, az); orbit.scale.set(ax, ay, az);
     extras.push(core, orbit); mats.push(cm);
     sol.crown = { core, orbit };
   }
@@ -233,19 +234,22 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   const refs = { pulse: 0, mats: { AM, EM } };
   if (L.halo) {
     const hb = sol.B[L.halo.b] || sol.B.chest;
-    const hm = new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(L.glow).multiplyScalar(2.4), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.85 });
+    const hm = new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(L.glow).multiplyScalar(2.4), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.7 });
     const halo = new THREE.Sprite(hm);
     halo.position.set(0, L.halo.y, L.halo.z);
-    halo.scale.setScalar(L.halo.s); halo.renderOrder = 6;
+    // Sprite 的屏幕尺寸按父骨骼的世界缩放放大（母体横向 3.3 倍），先折算回设计米数：
+    // 否则一张加性光片就有十几米，登场瞬间整屏被高光糊住、客户端直接卡死
+    const hx = L.halo.s / (s * ws), hy = L.halo.s / s;
+    halo.scale.set(hx, hy, 1); halo.renderOrder = 6;
     hb.add(halo); extras.push(halo); mats.push(hm);
-    refs.halo = { o: halo, s: L.halo.s };
+    refs.halo = { o: halo, sx: hx, sy: hy };
   }
   if (L.beam) {
-    const bm = new THREE.MeshBasicMaterial({ map: beamTex(), color: new THREE.Color(L.glow).multiplyScalar(1.5), transparent: true, opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    const bm = new THREE.MeshBasicMaterial({ map: beamTex(), color: new THREE.Color(L.glow).multiplyScalar(1.5), transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
     const geo = new THREE.CylinderGeometry(L.beam.r1, L.beam.r2, L.beam.h, 14, 1, true);
     const beam = new THREE.Mesh(geo, bm);
     beam.position.y = L.beam.h * 0.5 - 0.2;
-    beam.renderOrder = 5; beam.frustumCulled = false;
+    beam.renderOrder = 5;
     sol.root.add(beam); extras.push(beam); mats.push(bm);
     refs.beam = beam;
   }
@@ -279,10 +283,11 @@ export function dressSoldier(sol, key, possessed, optsIn) {
     refs.pulse = p > 0.001 ? p * Math.exp(-dt * 3.2) : 0;
     EM.emissiveIntensity = bloomBase + Math.sin(sol.breathT * (L.beat || 2.2)) * pulse + p * 7;
     if (refs.halo) {
-      refs.halo.o.material.opacity = Math.min(1, (0.55 + Math.sin(sol.breathT * 2.2) * 0.14 + p * 0.5) * fd);
-      refs.halo.o.scale.setScalar(refs.halo.s * (1 + p * 0.5) * fd);
+      const k = (1 + p * 0.5) * fd;
+      refs.halo.o.material.opacity = Math.min(0.8, (0.5 + Math.sin(sol.breathT * 2.2) * 0.12 + p * 0.4) * fd);
+      refs.halo.o.scale.set(refs.halo.sx * k, refs.halo.sy * k, 1);
     }
-    if (refs.beam) refs.beam.material.opacity = (0.11 + Math.sin(sol.breathT * 1.4) * 0.03 + p * 0.22) * fd;
+    if (refs.beam) refs.beam.material.opacity = (0.085 + Math.sin(sol.breathT * 1.4) * 0.02 + p * 0.16) * fd;
     if (refs.light && refs.light.o.userData.holder === sol) refs.light.o.intensity = refs.light.i * (0.85 + Math.sin(sol.breathT * 2.4) * 0.15 + p * 1.3) * fd;
     if (sol.aura) sol.aura.material.opacity = (0.16 + Math.sin(sol.breathT * 1.8) * 0.07 + p * 0.5) * fd;
     if (sol.crown) { sol.crown.core.rotation.y += dt * 2.6; sol.crown.orbit.rotation.y -= dt * 1.5; }

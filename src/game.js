@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { Renderer } from './render.js';
 import { buildTextures } from './textures.js';
-import { buildMap } from './map.js';
+import { mapOf, MAPS } from './maps.js';
+import { disposeMap } from './mapkit.js';
 import { Environment } from './env.js';
 import { World, NavGrid } from './physics.js';
 import { Effects } from './effects.js';
@@ -39,25 +40,32 @@ export class Game {
     await nextFrame();
     this.renderer = new Renderer(document.getElementById('c'), this.opts.quality);
     this.renderer.camera.fov = this.opts.fov;
-    this.hud.loading(0.12, '生成集装箱 / 甲板 / 船体纹理');
+    this.hud.loading(0.12, '生成船体 / 集装箱 / 地面纹理');
     await nextFrame(); await nextFrame();
     this.T = buildTextures(this.opts.quality);
-    this.hud.loading(0.55, '搭建运输船');
+    this.mapId = 'ship';
+    this.hud.loading(0.55, `搭建${MAPS[this.mapId].name}`);
     await nextFrame();
     this.world = new World();
-    this.map = buildMap(this.renderer.scene, this.T, this.world);
-    this.hud.loading(0.68, '天空与海洋');
+    this._mapRoot = new THREE.Group();
+    this.renderer.scene.add(this._mapRoot);
+    const def = mapOf(this.mapId);
+    if (def.textures) def.textures(this.T, this.opts.quality);
+    this.map = def.build(this._mapRoot, this.T, this.world, {});
+    this.map.root = this._mapRoot;
+    this.hud.loading(0.68, '天空与海面');
     await nextFrame();
     this.env = new Environment(this.renderer.renderer, this.renderer.scene, this.opts.quality);
     this.env.extraScenes = [this.renderer.vmScene];
+    this.env.setMap(def);
     this.env.apply(this.opts.tod);
     this.fx = new Effects(this.renderer.scene, this.T, this.renderer.camera);
     this.fx.initAmbient(this.map.funnelTop);
     this.vm = new ViewModel(this.renderer.vmScene, this.T, this.opts.team);
     this.hud.loading(0.8, '计算寻路网格');
     await nextFrame();
-    this.nav = new NavGrid(this.world, -36.2, -12.1, 36.2, 12.1, 0.5, 0.42);
-    this.hud.buildRadar(this.world);
+    this.nav = new NavGrid(this.world, ...def.bounds, 0.5, 0.42);
+    this.hud.buildRadar(this.world, def);
     this.hud.loading(0.88, '武器图标 / 预编译着色器');
     await nextFrame();
     this.hud.setIcons(this.makeIcons());
@@ -78,12 +86,40 @@ export class Game {
     if (this.qs.has('autonet')) setTimeout(() => this.netGame.quickStart(), 400);
     window.__game = this;
   }
+  // 运行时换图：整张图挂在同一个 Group 下，回收时几何 / 材质 / 灯一次清干净
+  async setMap(id) {
+    const def = mapOf(id);
+    if (this.mapId === def.id && this.map) return;
+    disposeMap(this.map);
+    this.world.clear();
+    this.mapId = def.id;
+    if (def.textures) def.textures(this.T, this.opts.quality);
+    const root = new THREE.Group();
+    this.renderer.scene.add(root);
+    this._mapRoot = root;
+    this.map = def.build(root, this.T, this.world, {});
+    this.map.root = root;
+    this.nav = new NavGrid(this.world, ...def.bounds, 0.5, 0.42);
+    this.hud.buildRadar(this.world, def);
+    this.env.setMap(def);
+    this.env.apply(this.opts.tod || this.env.tod || 'day');
+    this.fx.clearAmbient();
+    this.fx.clearDecals();
+    this.fx.initAmbient(this.map.funnelTop);
+    this.lampLights();
+    await nextFrame();
+    try { this.renderer.renderer.compile(this.renderer.scene, this.renderer.camera); } catch (e) { /* 忽略 */ }
+  }
   lampLights() {
-    // 管道内的少量真实点光源
-    for (const p of this.map.lampSpots.slice(0, this.opts.quality === 'low' ? 0 : 4)) {
+    // 换图时旧灯的 PointLight 数量必须一起降下来，否则材质会累积重编译
+    for (const l of this.mapLights || []) this.renderer.scene.remove(l);
+    this.mapLights = [];
+    if (this.opts.quality === 'low') return;
+    for (const p of (this.map && this.map.lampSpots ? this.map.lampSpots.slice(0, 4) : [])) {
       const l = new THREE.PointLight(0xffd9a0, 5, 9, 1.8);
       l.position.copy(p);
       this.renderer.scene.add(l);
+      this.mapLights.push(l);
     }
   }
   makeIcons() {
@@ -127,6 +163,9 @@ export class Game {
   openNetLobby() { this.netGame.openLobby(); }
   startMatch() {
     if (this.net) return;
+    const want = this.opts.map || 'ship';
+    // 换图要重建碰撞体与寻路网格，必须先完成再摆人，否则出生点落在旧图上
+    if (this.mapId !== want) { this.setMap(want).then(() => this.startMatch()); return; }
     const o = this.opts;
     audio.init(); audio.setVolumes({ master: o.vol }); audio.startAmbient(); audio.playUI('start');
     for (const a of this.actors) this.renderer.scene.remove(a.soldier.root);
@@ -295,6 +334,7 @@ export class Game {
     if (k === 'tod' && this.env) this.env.apply(v);
     if (k === 'quality') { this.hud.saveOpts(); location.reload(); }
     if (k === 'team' && this.vm) this.vm.setTeam(v);
+    if (k === 'map') this.setMap(v);   // 菜单里换图，背景立刻变成那张图
   }
   endMatch() {
     this.ended = true; this.playing = false;

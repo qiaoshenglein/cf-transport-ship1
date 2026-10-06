@@ -28,12 +28,12 @@ function createRoom(o) {
   if (rooms.size >= MAX_ROOMS) return null;
   const room = new Room(String(roomSeq++), {
     name: cleanName(o.name) || '房间',
-    goal: o.goal, max: o.max, mode: o.mode, diff: o.diff,
+    goal: o.goal, max: o.max, mode: o.mode, diff: o.diff, map: o.map,
     onEmpty: (r) => { rooms.delete(r.id); log(`房间 ${r.id} 已回收`); },
     onCheat: (p, kind) => { log(`房间 ${room.id} 疑似作弊 ${kind}：${p.name}(#${p.id})，已暂停其开火 4 秒`); },
   });
   rooms.set(room.id, room);
-  log(`房间 ${room.id} 创建：${room.name}（目标 ${room.goal} / 上限 ${room.max}）`);
+  log(`房间 ${room.id} 创建：${room.name}（${room.mapName} / 目标 ${room.goal} / 上限 ${room.max}）`);
   return room;
 }
 const roomList = () => [...rooms.values()].map((r) => r.info());
@@ -144,12 +144,15 @@ const handlers = {
   quick(s, m) {
     if (s.room) return s.err('已在房间中');
     const want = m && m.mode === 'pve' ? 'pve' : 'pvp'; // 匹配不跨模式，避免 PVE 玩家被丢进对抗日
-    let best = null;
+    const wantMap = m && m.map;
+    let best = null, alt = null;
     for (const r of rooms.values()) {
       if (r.mode !== want || r.players.size >= r.max) continue;
-      if (!best || r.players.size > best.players.size) best = r; // 优先凑人
+      if (wantMap && r.mapId === wantMap && (!best || r.players.size > best.players.size)) { best = r; continue; }
+      if (!alt || r.players.size > alt.players.size) alt = r; // 同图优先，其次凑人
     }
-    if (!best) best = createRoom({ name: want === 'pve' ? '僵尸挑战' : '快速匹配', goal: (m && m.goal) || 50, max: (m && m.max) || 16, mode: want, diff: m && m.diff });
+    best = best || alt;
+    if (!best) best = createRoom({ name: want === 'pve' ? '僵尸挑战' : '快速匹配', goal: (m && m.goal) || 50, max: (m && m.max) || 16, mode: want, diff: m && m.diff, map: wantMap });
     if (!best || !s.join(best, { primary: m && m.primary, team: m && m.team })) return s.err('无法加入房间');
     s.send({ t: 'joined', ticket: s.ticket, ...best.welcome(s.player) });
     log(`${s.name} 快速匹配进入房间 ${best.id}`);

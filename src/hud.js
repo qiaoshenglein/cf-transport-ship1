@@ -1,5 +1,6 @@
 // HUD 与菜单（DOM）
 import { WEAPONS, PRIMARIES } from './weapons.js';
+import { MAPS, MAP_IDS } from './maps.js';
 
 const TEAM_CN = { BL: '潜伏者', GR: '保卫者' };
 const $ = (s, r = document) => r.querySelector(s);
@@ -35,7 +36,7 @@ export class HUD {
     this.root.appendChild(this.veilEl);
     this._veil = '';
     const touch = matchMedia('(pointer:coarse)').matches;
-    this.opts = { team: 'BL', primary: 'ak47', size: 6, diff: 'normal', goal: 50, tod: 'day', quality: touch ? 'low' : 'high', sens: 1.0, fov: 78, vol: 0.8 };
+    this.opts = { team: 'BL', primary: 'ak47', size: 6, diff: 'normal', goal: 50, tod: 'day', map: 'ship', quality: touch ? 'low' : 'high', sens: 1.0, fov: 78, vol: 0.8 };
     try { Object.assign(this.opts, JSON.parse(localStorage.getItem('cf_ship_opts') || '{}')); } catch (e) { /* 忽略 */ }
     this.buildMenu();
   }
@@ -232,6 +233,7 @@ export class HUD {
   scoreboard(show, actors, myId, score) {
     this.el.board.classList.toggle('hidden', !show);
     if (!show) return;
+    const bt = $('#boardTitle'); if (bt) bt.textContent = `${this.mapLabel || '运输船'} · ${this.pve() ? '僵尸挑战' : '团队竞技'}`;
     const row = (a) => {
       const mark = a.isBoss ? '<span title="BOSS">👑</span> ' : a.isBot ? '<span style="opacity:.7" title="机器人">🤖</span> ' : '';
       const hpTxt = a.isBoss && a.bossHpMax ? ` <span style="opacity:.75">· ${Math.max(0, Math.ceil(a.bossHp))}/${a.bossHpMax}</span>` : '';
@@ -266,18 +268,21 @@ export class HUD {
     const tbl = (team) => `<table class="t${team}"><tr><th class="team">${this.teamCN(team)}</th><th>击杀</th><th>死亡</th><th>爆头</th></tr>${rows(team)}</table>`;
     this.el.endTable.innerHTML = `<div class="cols">${tbl('BL')}${tbl('GR')}</div>`;
   }
-  // ---------- 小地图 ----------
-  buildRadar(world) {
+  // ---------- 小地图（按当前地图的长宽 / 虚线框生成） ----------
+  buildRadar(world, mapDef) {
     const S = 8; // px/m
-    const W = 74 * S, H = 26 * S;
+    const rd = (mapDef && mapDef.radar) || { w: 74, d: 26 };
+    const ox = rd.w / 2, oz = rd.d / 2;
+    this.radarOX = ox; this.radarOZ = oz;
+    const W = rd.w * S, H = rd.d * S;
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const x = c.getContext('2d');
-    x.fillStyle = 'rgba(70,80,84,0.95)'; x.fillRect(0, 0, W, H);
-    const cols = [...world.colliders].filter((k) => k.solid && k.top > 0.3 && k.bottom < 2 && k.hx < 30 && k.tag !== 'deck').sort((a, b) => a.top - b.top);
+    x.fillStyle = rd.bg || 'rgba(70,80,84,0.95)'; x.fillRect(0, 0, W, H);
+    const cols = [...world.colliders].filter((k) => k.solid && k.top > 0.3 && k.bottom < 2 && k.hx < 30 && k.tag !== 'deck');
     for (const k of cols) {
       if (k.bullet === 'pass' && k.mat !== 'mesh') continue;
       x.save();
-      x.translate((k.x + 37) * S, (k.z + 13) * S);
+      x.translate((k.x + ox) * S, (k.z + oz) * S);
       x.rotate(-k.yaw);
       const hgt = k.top;
       x.fillStyle = k.mat === 'mesh' ? 'rgba(200,200,190,.5)' : hgt > 4 ? '#1d2327' : hgt > 2 ? '#2d353a' : hgt > 1.3 ? '#3b454b' : '#56616a';
@@ -286,11 +291,12 @@ export class HUD {
       x.strokeRect(-k.hx * S, -k.hz * S, k.hx * 2 * S, k.hz * 2 * S);
       x.restore();
     }
-    // 管道顶棚（二楼）用虚线表示
+    // 可行走的高处平面（船二楼 / 城镇天台）用虚线表示
     x.strokeStyle = 'rgba(245,179,33,.35)'; x.setLineDash([6, 4]);
-    x.strokeRect((-29.5 + 37) * S, (9.4 + 13) * S, 36.6 * S, 2.44 * S);
-    x.strokeRect((29.5 - 36.6 + 37) * S, (-11.84 + 13) * S, 36.6 * S, 2.44 * S);
+    for (const r of rd.overlay || []) x.strokeRect((r.x - r.w / 2 + ox) * S, (r.z - r.d / 2 + oz) * S, r.w * S, r.d * S);
     this.radarImg = c; this.radarS = S;
+    const lbl = $('#radarWrap .lbl'); if (lbl) lbl.textContent = (mapDef && mapDef.name) || '运输船';
+    this.mapLabel = (mapDef && mapDef.name) || '运输船';
   }
   drawRadar(me, actors, t) {
     const ctx = this.radarCtx, cv = this.el.radar;
@@ -305,7 +311,7 @@ export class HUD {
     ctx.translate(W / 2, H / 2);
     ctx.rotate(me.yaw);
     ctx.scale(zoom, zoom);
-    ctx.translate(-(me.pos.x + 37) * S, -(me.pos.z + 13) * S);
+    ctx.translate(-(me.pos.x + this.radarOX) * S, -(me.pos.z + this.radarOZ) * S);
     ctx.globalAlpha = 0.95;
     ctx.drawImage(this.radarImg, 0, 0);
     ctx.globalAlpha = 1;
@@ -313,7 +319,7 @@ export class HUD {
       if (a === me) continue;
       const seen = a.team === me.team || a.radarT > 0 || a.isBoss;   // BOSS 常驻雷达：它是本轮的目标
       if (!seen) continue;
-      const px = (a.pos.x + 37) * S, pz = (a.pos.z + 13) * S;
+      const px = (a.pos.x + this.radarOX) * S, pz = (a.pos.z + this.radarOZ) * S;
       if (!a.alive) {
         if (a.team !== me.team || a.deadT > 5) continue;
         ctx.strokeStyle = '#9aa'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px - 8, pz - 8); ctx.lineTo(px + 8, pz + 8); ctx.moveTo(px + 8, pz - 8); ctx.lineTo(px - 8, pz + 8); ctx.stroke();
@@ -385,7 +391,7 @@ const TEMPLATE = `
   <div id="toast"></div>
   <div id="protect"></div>
   <div id="nameTip"></div>
-  <div id="board" class="hidden tbl"><h3><span>运输船 · 团队竞技</span><span>Tab</span></h3><div id="boardBody"></div></div>
+  <div id="board" class="hidden tbl"><h3><span id="boardTitle">运输船 · 团队竞技</span><span>Tab</span></h3><div id="boardBody"></div></div>
   <div id="touch" class="hidden"></div>
 </div>
 
@@ -415,6 +421,7 @@ const TEMPLATE = `
         <div class="opt"><div class="lab">目标击杀</div><div class="seg" data-k="goal"><button data-v="30">30</button><button data-v="50">50</button><button data-v="100">100</button></div></div>
       </div>
       <div class="opt"><div class="lab">电脑难度</div><div class="seg" data-k="diff"><button data-v="easy">简单</button><button data-v="normal">普通</button><button data-v="hard">困难</button><button data-v="hell">地狱</button></div></div>
+      <div class="opt"><div class="lab">地图</div><div class="seg" data-k="map">${MAP_IDS.map((id) => `<button data-v="${id}">${MAPS[id].name}<small>${MAPS[id].desc}</small></button>`).join('')}</div></div>
       <div class="row2">
         <div class="opt"><div class="lab">时间</div><div class="seg" data-k="tod"><button data-v="day">白天</button><button data-v="dusk">黄昏</button></div></div>
         <div class="opt"><div class="lab">画质</div><div class="seg" data-k="quality"><button data-v="low">流畅</button><button data-v="medium">均衡</button><button data-v="high">极致</button></div></div>

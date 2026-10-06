@@ -8,7 +8,8 @@ import { B, TICK_RATE, INTERP_DELAY, PROTO_VERSION, decodeWorld } from './protoc
 import { WEAPONS, PRIMARIES } from './weapons.js';
 import { buildGunMerged } from './guns.js';
 import { audio } from './audio.js';
-import { SUPPLY_POINTS, SUPPLY_NAME } from './supplies.js';
+import { SUPPLY_NAME } from './supplies.js';
+import { MAPS, MAP_IDS, mapName, suppliesForMap } from './maps.js';
 import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, BOSS_TINT } from './bosslook.js';
 
 const DT = 1 / TICK_RATE;
@@ -177,14 +178,18 @@ export class NetGame {
     d.id = 'lobby'; d.className = 'screen hidden';
     d.innerHTML = `
 <div class="menuBox" style="grid-template-columns:1fr;width:min(760px,94vw)">
- <div class="title" style="margin-bottom:6px"><div class="logo">CROSSFIRE · 联机对战</div><h1 style="font-size:32px">运输船 · 房间大厅</h1></div>
+ <div class="title" style="margin-bottom:6px"><div class="logo">CROSSFIRE · 联机对战</div><h1 style="font-size:32px">房间大厅</h1></div>
  <div class="row2">
   <div class="opt"><div class="lab">昵称（主菜单已选主武器；联机阵营进入房间时自动平衡，PVE 全员同队）</div><div class="netinp"><input type="text" id="netName" maxlength="12" placeholder="输入昵称"></div></div>
   <div class="opt"><div class="lab">创建房间</div><div class="seg" data-kg="goal"><button data-v="30">30杀</button><button data-v="50" class="on">50杀</button><button data-v="100">100杀</button></div><div class="seg" data-kg="max" style="margin-top:6px"><button data-v="8">8人</button><button data-v="16" class="on">16人</button></div></div>
  </div>
  <div class="row2">
+  <div class="opt"><div class="lab">地图</div><div class="seg" data-kg="map">${MAP_IDS.map((id) => `<button data-v="${id}"${id === 'ship' ? ' class="on"' : ''}>${esc(MAPS[id].name)}</button>`).join('')}</div></div>
   <div class="opt"><div class="lab">模式（PVE 有终极 BOSS 与补给站，BOSS 登场后按 G 可附身）</div><div class="seg" data-kg="mode"><button data-v="pvp" class="on">团队对抗 PVP</button><button data-v="pve">僵尸挑战 PVE</button></div></div>
+ </div>
+ <div class="row2">
   <div class="opt" id="pveOpt" style="display:none"><div class="lab">PVE 难度</div><div class="seg" data-kg="diff"><button data-v="easy">轻松</button><button data-v="normal" class="on">普通</button><button data-v="hard">困难</button><button data-v="hell">炼狱</button></div></div>
+  <div class="opt"><div class="lab">地图特点</div><div class="note" id="mapDesc">${esc(MAPS.ship.desc)}</div></div>
  </div>
  <div class="row3" style="margin:8px 0 12px">
   <button class="go" id="netQuick" style="margin:0">快 速 匹 配</button>
@@ -195,22 +200,24 @@ export class NetGame {
  <div class="note" id="netStatus">正在连接服务器…</div>
 </div>`;
     document.getElementById('ui').appendChild(d);
-    const o = { goal: 50, max: 16, mode: 'pvp', diff: 'normal' };
+    const o = { goal: 50, max: 16, mode: 'pvp', diff: 'normal', map: 'ship' };
     const pveOpt = d.querySelector('#pveOpt');
+    const mapDesc = d.querySelector('#mapDesc');
     for (const seg of d.querySelectorAll('.seg[data-kg]')) for (const b of seg.querySelectorAll('button')) b.addEventListener('click', () => {
       for (const x of seg.querySelectorAll('button')) x.classList.remove('on');
       b.classList.add('on'); o[seg.dataset.kg] = b.dataset.v;
       if (seg.dataset.kg === 'mode') pveOpt.style.display = b.dataset.v === 'pve' ? '' : 'none';
+      if (seg.dataset.kg === 'map') mapDesc.textContent = (MAPS[b.dataset.v] || MAPS.ship).desc;
       this.g.audio?.playUI?.('click');
     });
     const nameInp = d.querySelector('#netName');
     nameInp.value = this.playerName();
     nameInp.addEventListener('change', () => this.saveName());
-    d.querySelector('#netQuick').addEventListener('click', () => { this.saveName(); this.send({ t: 'quick', primary: this.g.opts.primary, mode: o.mode, diff: o.diff, goal: +o.goal, max: +o.max }); this.setStatus('正在匹配…'); });
+    d.querySelector('#netQuick').addEventListener('click', () => { this.saveName(); this.send({ t: 'quick', primary: this.g.opts.primary, mode: o.mode, diff: o.diff, goal: +o.goal, max: +o.max, map: o.map }); this.setStatus('正在匹配…'); });
     d.querySelector('#netCreate').addEventListener('click', () => {
       this.saveName();
       const pve = o.mode === 'pve';
-      this.send({ t: 'create', name: pve ? `${this.playerName()}的挑战` : `${this.playerName()}的战场`, goal: +o.goal, max: +o.max, primary: this.g.opts.primary, mode: o.mode, diff: o.diff });
+      this.send({ t: 'create', name: pve ? `${this.playerName()}的挑战` : `${this.playerName()}的战场`, goal: +o.goal, max: +o.max, primary: this.g.opts.primary, mode: o.mode, diff: o.diff, map: o.map });
       this.setStatus(pve ? '正在开启僵尸挑战…' : '正在创建…');
     });
     d.querySelector('#netBack').addEventListener('click', () => this.closeLobby());
@@ -223,7 +230,7 @@ export class NetGame {
     if (!this.roomList) return;
     if (!list.length) { this.roomList.innerHTML = '<div class="note">暂无房间：点击「创建房间」或「快速匹配」开战。</div>'; return; }
     this.roomList.innerHTML = list.map((r) => `
-      <div class="roomRow"><b>${esc(r.name)}</b><span class="rm">${r.mode === 'pve' ? `<em class="pvetag">PVE ${esc(PVE_DIFF_CN[r.diff] || '普通')} · 第 ${(r.wave || 0) + 1} 波</em>${r.boss ? `<em class="pvetag">⚠ ${esc(r.boss.nm)}${r.boss.by ? ' · 玩家附身' : ''}</em>` : ''} ` : ''}${r.n}/${r.max} 人${r.sp ? ` · 观战 ${r.sp}` : ''} · ${r.mode === 'pve' ? `已清除 <i>${r.score ? r.score.BL : 0}</i> 只 · 阵亡 <i>${r.score ? r.score.GR : 0}</i>` : `潜伏 <i>${r.bl}</i>:<i>${r.gr}</i> 保卫 · 目标 ${r.goal}`} · ${r.state === 'play' ? `剩 ${Math.round(r.timeLeft)}s` : '结算中'}</span><button class="jin" data-rid="${esc(r.id)}">加入</button><button class="jin spectbtn" data-rid="${esc(r.id)}">观战</button></div>`).join('');
+      <div class="roomRow"><b>${esc(r.name)}</b><span class="rm">${r.mn ? `<em class="maptag">${esc(r.mn)}</em>` : ''}${r.mode === 'pve' ? `<em class="pvetag">PVE ${esc(PVE_DIFF_CN[r.diff] || '普通')} · 第 ${(r.wave || 0) + 1} 波</em>${r.boss ? `<em class="pvetag">⚠ ${esc(r.boss.nm)}${r.boss.by ? ' · 玩家附身' : ''}</em>` : ''} ` : ''}${r.n}/${r.max} 人${r.sp ? ` · 观战 ${r.sp}` : ''} · ${r.mode === 'pve' ? `已清除 <i>${r.score ? r.score.BL : 0}</i> 只 · 阵亡 <i>${r.score ? r.score.GR : 0}</i>` : `潜伏 <i>${r.bl}</i>:<i>${r.gr}</i> 保卫 · 目标 ${r.goal}`} · ${r.state === 'play' ? `剩 ${Math.round(r.timeLeft)}s` : '结算中'}</span><button class="jin" data-rid="${esc(r.id)}">加入</button><button class="jin spectbtn" data-rid="${esc(r.id)}">观战</button></div>`).join('');
     for (const b of this.roomList.querySelectorAll('button.jin')) b.addEventListener('click', () => {
       this.saveName();
       const spect = b.classList.contains('spectbtn');
@@ -247,8 +254,19 @@ export class NetGame {
   }
 
   // ================= 对局：初始化 =================
-  startMatch(w) {
+  // 进入房间前把场景换成该房间那张图（客户端与服务端用同一份建造代码，坐标不会漂）
+  async enterMap(id) {
+    const want = id || 'ship';
     const g = this.g;
+    if (!g.setMap || g.mapId === want) return;
+    this.banner(`正在搭建 ${mapName(want)}…`);
+    try { await g.setMap(want); } catch (e) { console.warn('换图失败', e); }
+    this.banner('');
+    g.hud.toast(`地图 <b style="color:#f5b321">${esc(mapName(want))}</b> · ${esc((MAPS[want] || MAPS.ship).desc)}`, 3.5);
+  }
+  async startMatch(w) {
+    const g = this.g;
+    await this.enterMap(w.room && w.room.map);
     this.clearScene();
     if (this.lobby) this.lobby.classList.add('hidden');
     this.room = w.room; this.myId = w.you; this.ticket = w.ticket || this.ticket;
@@ -354,8 +372,9 @@ export class NetGame {
   }
 
   // ================= 观战 =================
-  startSpectate(m) {
+  async startSpectate(m) {
     const g = this.g;
+    await this.enterMap(m.room && m.room.map);
     this.clearScene();
     if (this.lobby) this.lobby.classList.add('hidden');
     this.state = 'play'; this.inMatch = true; this.manualLeave = false;
@@ -841,7 +860,8 @@ export class NetGame {
         g.fx.light(p, 2.2, 0.45, e.k === 'acid' ? 0x74d94a : 0xffa850, 18);
         audio.playExplosion(p);
         const cd = g.renderer.camera.position.distanceTo(p);
-        g.fx.shake = Math.max(g.fx.shake || 0, Math.max(0, (e.r || 4) * 0.8 - cd / 8));
+        // 震动封顶到手雷同级：BOSS 技能半径大，线性放大能到 3.7 倍，镜头甩到人发晕
+        g.fx.shake = Math.max(g.fx.shake || 0, Math.min(1.2, Math.max(0, (e.r || 4) * 0.8 - cd / 8)));
         break;
       }
       case 'bossdown':
@@ -939,7 +959,7 @@ export class NetGame {
     const geoLid = new THREE.BoxGeometry(0.9, 0.12, 0.64);
     const lidMat = new THREE.MeshStandardMaterial({ color: 0x272d34, roughness: 0.85, metalness: 0.1 });
     const COL = { ammo: 0xf5b321, med: 0xff5a49, armor: 0x49a0ff };
-    const stations = SUPPLY_POINTS.map((s, i) => {
+    const stations = suppliesForMap(this.room.map).map((s, i) => {
       const mat = new THREE.MeshStandardMaterial({ color: COL[s.kind], roughness: 0.55, metalness: 0.2, emissive: COL[s.kind], emissiveIntensity: 0.5 });
       const grp = new THREE.Group();
       const body = new THREE.Mesh(geoBody, mat); body.position.y = 0.3;

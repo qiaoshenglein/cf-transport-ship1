@@ -198,6 +198,7 @@ body.lk #clinks{opacity:.22}
 #lobby .roomRow .rm{flex:1;color:#8b96a0;font-size:12.5px}
 #lobby .roomRow .rm i{font-style:normal;color:var(--accent);font-family:var(--num)}
 #lobby .roomRow .pvetag{font-style:normal;color:#ff8f6e;border:1px solid rgba(255,110,80,.45);background:rgba(255,90,60,.12);border-radius:5px;padding:1px 6px;margin-right:2px}
+#lobby .roomRow .maptag{font-style:normal;color:#8fd3ff;border:1px solid rgba(120,190,255,.4);background:rgba(70,150,220,.14);border-radius:5px;padding:1px 6px;margin-right:4px}
 #lobby .jin{padding:5px 18px;border-radius:6px;border:1px solid rgba(245,179,33,.5);background:rgba(245,179,33,.12);color:var(--accent);cursor:pointer;font-size:13px;font-family:var(--cn)}
 #lobby .jin:hover{background:rgba(245,179,33,.28)}
 #lobby .netinp input{width:100%;padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.35);color:#fff;font-size:14px;font-family:var(--cn);outline:none}

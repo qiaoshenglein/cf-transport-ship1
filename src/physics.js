@@ -42,6 +42,12 @@ export class World {
     this.colliders.push(c);
     return c;
   }
+  // 换图：清空碰撞体与网格（同一 World 实例复用，避免重建引用）
+  clear() {
+    this.colliders.length = 0;
+    this.grid.clear();
+    this._cand.length = 0;
+  }
   build() {
     this.grid.clear();
     for (const c of this.colliders) {

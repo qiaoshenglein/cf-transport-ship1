@@ -1,6 +1,6 @@
-// 服务端无头加载运输船地图：复用客户端 buildMap 生成完全一致的碰撞体，跳过所有贴图 / 烘焙
+// 服务端无头加载地图：复用客户端 build* 生成完全一致的碰撞体，跳过所有贴图 / 烘焙
 import { World } from '../src/physics.js';
-import { buildMap } from '../src/map.js';
+import { mapOf } from '../src/maps.js';
 import { CONTAINER_COLORS } from '../src/textures.js';
 
 let cached = null;
@@ -13,14 +13,19 @@ function stubTextures() {
     crates: [0, 1, 2, 3].map(() => ({ ...texSet, kind: 'wood' })).concat([0, 1].map(() => ({ ...texSet, kind: 'metal' }))),
     fence: null, grating: null, signs: null,
   };
+  // 新地图自带的贴图（sandStone / plaster / …）服务端一律取空贴图桩
   return new Proxy(T, { get: (t, k) => (k in t ? t[k] : texSet) });
 }
 
-export function loadMap() {
-  if (cached) return cached;
+const cache = new Map();
+
+export function loadMap(mapId = 'ship') {
+  const def = mapOf(mapId);
+  if (cache.has(def.id)) return cache.get(def.id);
   const world = new World();
   const scene = { add() {} };
-  const m = buildMap(scene, stubTextures(), world, { headless: true });
-  cached = { world, spawns: m.spawns };
-  return cached;
+  const m = def.build(scene, stubTextures(), world, { headless: true });
+  const rec = { world, spawns: m.spawns, id: def.id, def, map: m };
+  cache.set(def.id, rec);
+  return rec;
 }

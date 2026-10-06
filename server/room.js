@@ -12,7 +12,8 @@ import { NavGrid } from '../src/physics.js';
 import { BotBrain, randomBotName, randomBotPrimary } from './botai.js';
 import { MONSTERS, PVE_SPAWNS, PVE_DIFF, wavePlan, MonsterBrain } from './monsters.js';
 import { BOSSES, BossBrain, randomBossKind, bossHpScale } from './bosses.js';
-import { SUPPLY_POINTS, SUPPLY_CD, SUPPLY_R, SUPPLY_HEAL } from '../src/supplies.js';
+import { SUPPLY_CD, SUPPLY_R, SUPPLY_HEAL } from '../src/supplies.js';
+import { suppliesForMap } from '../src/maps.js';
 import { sizeOf } from '../src/bosssize.js';
 
 const DT = 1 / TICK_RATE;
@@ -34,9 +35,11 @@ export class Room {
     this.max = Math.max(2, Math.min(16, o.max | 0 || 16));
     this.onEmpty = o.onEmpty || (() => {});
     this.onCheat = o.onCheat || null;
-    const m = loadMap();
+    const m = loadMap(o.map);
+    this.mapId = m.id; this.mapName = m.def.name;
     this.world = m.world; this.spawns = m.spawns;
-    this.nav = new NavGrid(this.world, -36.2, -12.1, 36.2, 12.1, 0.5, 0.42);
+    this.nav = new NavGrid(this.world, ...m.def.bounds, 0.5, 0.42);
+    this.pveSpawns = m.def.pve.spawns;
     this.ownerId = null;                 // 房主（首个真人；离开后移交）
     this.maxBots = Math.max(0, (o.maxBots | 0) || 12); // 每房机器人上限
     this.mode = o.mode === 'pve' ? 'pve' : 'pvp';
@@ -46,7 +49,7 @@ export class Room {
     this.wave = 0; this.waveLeft = 0; this.nextWaveAt = 0; this.pending = [];
     this.bossAtWave = 4 + randInt(3);    // 随机波次随机 BOSS
     this.lastBossKind = null; this.possessId = null; this.bossPool = 0; this.bossKind = null;
-    this.supplies = SUPPLY_POINTS.map((s, i) => ({ x: s.x, z: s.z, kind: s.kind, i, readyAt: 0 }));
+    this.supplies = suppliesForMap(this.mapId).map((s, i) => ({ x: s.x, z: s.z, kind: s.kind, i, readyAt: 0 }));
     this.drops = []; this.dropSeq = 1; this.supDirty = true;
     this.players = new Map(); // id -> player
     this.spectators = new Map(); // 观战席位 id -> { id, sess, name }
@@ -99,7 +102,7 @@ export class Room {
   }
   info() {
     const t = this.teamCount();
-    return { id: this.id, name: this.name, goal: this.goal, max: this.max, n: this.players.size, bl: t.BL, gr: t.GR, sp: this.spectators.size, score: this.score, state: this.state, timeLeft: Math.round(this.timeLeft), owner: this.ownerId, bots: this.botCount(), mode: this.mode, wave: this.wave, diff: this.pveDiff, boss: this.mode === 'pve' ? this.bossState() : null };
+    return { id: this.id, name: this.name, goal: this.goal, max: this.max, n: this.players.size, bl: t.BL, gr: t.GR, sp: this.spectators.size, score: this.score, state: this.state, timeLeft: Math.round(this.timeLeft), owner: this.ownerId, bots: this.botCount(), mode: this.mode, map: this.mapId, mn: this.mapName, wave: this.wave, diff: this.pveDiff, boss: this.mode === 'pve' ? this.bossState() : null };
   }
   // BOSS 现状（AI 血线或真人附身血线），供大厅列表与客户端血条初始值
   bossState() {
@@ -224,7 +227,8 @@ export class Room {
     const sp = this.pveDef(kind) || MONSTERS.infected;
     const boss = !!sp.boss;
     const D = PVE_DIFF[this.pveDiff] || PVE_DIFF.normal;
-    const pt = PVE_SPAWNS[randInt(PVE_SPAWNS.length)];
+    const pool = this.pveSpawns && this.pveSpawns.length ? this.pveSpawns : PVE_SPAWNS;
+    const pt = pool[randInt(pool.length)];
     // resetForSpawn 会把血量写成 100，所以这里先算定血量，出生后再覆盖
     const hp = Math.round(sp.hp * D.hpK * (boss ? bossHpScale(this.wave) : 1));
     const m = {

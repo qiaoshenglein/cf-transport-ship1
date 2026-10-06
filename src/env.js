@@ -233,8 +233,18 @@ export class Environment {
     this.shipSpeed = 6.5;
     this.apply('day');
   }
+  // 换图：海面开关 + 该图的大气配色与阴影体量（env 可以是整套覆盖，也可以按 tod 分别覆盖）
+  setMap(def) {
+    this.mapDef = def || null;
+    this.ocean.visible = !!(def ? def.sea : true);
+    this.apply(this.tod || 'day');
+  }
   apply(name) {
-    const P = this.preset = PRESETS[name] || PRESETS.day;
+    const base = PRESETS[name] || PRESETS.day;
+    const md = this.mapDef;
+    const ov = md && md.env ? (md.env[name] || md.env) : null;
+    const P = this.preset = ov ? { ...base, ...ov } : base;
+    this.tod = PRESETS[name] ? name : 'day';
     const phi = THREE.MathUtils.degToRad(90 - P.elev), theta = THREE.MathUtils.degToRad(P.azim);
     // 方位角从 +X 起逆时针到 +Z
     this.sunDir.set(Math.sin(phi) * Math.cos(theta), Math.cos(phi), Math.sin(phi) * Math.sin(theta)).normalize();
@@ -244,13 +254,14 @@ export class Environment {
     u.sunPosition.value.copy(this.sunDir);
     this.sun.color.set(P.sunColor); this.sun.intensity = P.sunInt;
     this.sun.position.copy(this.sun.target.position).addScaledVector(this.sunDir, 120);
-    // 阴影相机包住整艘可见船体
+    // 阴影相机包住当前地图的可见体量
     const cam = this.sun.shadow.camera;
     const lightM = new THREE.Matrix4().lookAt(this.sun.position, this.sun.target.position, new THREE.Vector3(0, 1, 0));
     const inv = lightM.clone().invert();
     const box = new THREE.Box3();
     const pts = [];
-    for (const x of [-58, 40]) for (const y of [-1, 26]) for (const z of [-15, 15]) pts.push(new THREE.Vector3(x, y, z));
+    const b = (md && md.shadow) || [-58, 40, -1, 26, -15, 15];
+    for (const x of [b[0], b[1]]) for (const y of [b[2], b[3]]) for (const z of [b[4], b[5]]) pts.push(new THREE.Vector3(x, y, z));
     const lp = new THREE.Vector3();
     for (const p of pts) { lp.copy(p).sub(this.sun.position).applyMatrix4(inv); box.expandByPoint(lp); }
     cam.left = box.min.x; cam.right = box.max.x; cam.bottom = box.min.y; cam.top = box.max.y;
