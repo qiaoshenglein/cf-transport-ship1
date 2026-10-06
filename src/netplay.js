@@ -10,7 +10,7 @@ import { buildGunMerged } from './guns.js';
 import { audio } from './audio.js';
 import { SUPPLY_NAME } from './supplies.js';
 import { MAPS, MAP_IDS, mapName, suppliesForMap } from './maps.js';
-import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, bossLod, BOSS_TINT } from './bosslook.js';
+import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, bossLod, prewarmBossFx, BOSS_TINT } from './bosslook.js';
 
 const DT = 1 / TICK_RATE;
 const PVE_DIFF_CN = { easy: '轻松', normal: '普通', hard: '困难', hell: '炼狱' };
@@ -181,7 +181,7 @@ export class NetGame {
  <div class="title" style="margin-bottom:6px"><div class="logo">CROSSFIRE · 联机对战</div><h1 style="font-size:32px">房间大厅</h1></div>
  <div class="row2">
   <div class="opt"><div class="lab">昵称（主菜单已选主武器；联机阵营进入房间时自动平衡，PVE 全员同队）</div><div class="netinp"><input type="text" id="netName" maxlength="12" placeholder="输入昵称"></div></div>
-  <div class="opt"><div class="lab">创建房间</div><div class="seg" data-kg="goal"><button data-v="30">30杀</button><button data-v="50" class="on">50杀</button><button data-v="100">100杀</button></div><div class="seg" data-kg="max" style="margin-top:6px"><button data-v="8">8人</button><button data-v="16" class="on">16人</button></div></div>
+  <div class="opt"><div class="lab">创建房间 · 目标击杀（可直接输入 1–999）</div><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><div class="seg" data-kg="goal"><button data-v="30">30杀</button><button data-v="50" class="on">50杀</button><button data-v="100">100杀</button></div><input type="number" id="netGoal" min="1" max="999" step="1" value="50" style="width:76px;padding:5px 6px;background:#141821;border:1px solid #38424f;border-radius:5px;color:#e8ecf3;text-align:center;font:inherit"></div><div class="seg" data-kg="max" style="margin-top:6px"><button data-v="8">8人</button><button data-v="16" class="on">16人</button></div></div>
  </div>
  <div class="row2">
   <div class="opt"><div class="lab">地图</div><div class="seg" data-kg="map">${MAP_IDS.map((id) => `<button data-v="${id}"${id === 'ship' ? ' class="on"' : ''}>${esc(MAPS[id].name)}</button>`).join('')}</div></div>
@@ -203,21 +203,33 @@ export class NetGame {
     const o = { goal: 50, max: 16, mode: 'pvp', diff: 'normal', map: 'ship' };
     const pveOpt = d.querySelector('#pveOpt');
     const mapDesc = d.querySelector('#mapDesc');
+    const goalInp = d.querySelector('#netGoal');
     for (const seg of d.querySelectorAll('.seg[data-kg]')) for (const b of seg.querySelectorAll('button')) b.addEventListener('click', () => {
       for (const x of seg.querySelectorAll('button')) x.classList.remove('on');
       b.classList.add('on'); o[seg.dataset.kg] = b.dataset.v;
+      if (seg.dataset.kg === 'goal' && goalInp) goalInp.value = b.dataset.v;   // 点预设同步到手输框
       if (seg.dataset.kg === 'mode') pveOpt.style.display = b.dataset.v === 'pve' ? '' : 'none';
       if (seg.dataset.kg === 'map') mapDesc.textContent = (MAPS[b.dataset.v] || MAPS.ship).desc;
       this.g.audio?.playUI?.('click');
     });
+    // 手输目标击杀：夹在 1~999，与预设不冲突（输入自定义值就取消预设高亮）
+    const clampGoal = (v) => { const n = Math.round(+v); return Math.max(1, Math.min(999, Number.isFinite(n) ? n : 50)); };
+    if (goalInp) {
+      goalInp.addEventListener('input', () => {
+        o.goal = goalInp.value;
+        for (const b of d.querySelectorAll('.seg[data-kg="goal"] button')) b.classList.toggle('on', goalInp.value !== '' && b.dataset.v === String(clampGoal(goalInp.value)));
+      });
+      goalInp.addEventListener('blur', () => { goalInp.value = String(clampGoal(goalInp.value)); o.goal = goalInp.value; });
+    }
+    const goalVal = () => clampGoal(goalInp && goalInp.value !== '' ? goalInp.value : o.goal);
     const nameInp = d.querySelector('#netName');
     nameInp.value = this.playerName();
     nameInp.addEventListener('change', () => this.saveName());
-    d.querySelector('#netQuick').addEventListener('click', () => { this.saveName(); this.send({ t: 'quick', primary: this.g.opts.primary, mode: o.mode, diff: o.diff, goal: +o.goal, max: +o.max, map: o.map }); this.setStatus('正在匹配…'); });
+    d.querySelector('#netQuick').addEventListener('click', () => { this.saveName(); this.send({ t: 'quick', primary: this.g.opts.primary, mode: o.mode, diff: o.diff, goal: goalVal(), max: +o.max, map: o.map }); this.setStatus('正在匹配…'); });
     d.querySelector('#netCreate').addEventListener('click', () => {
       this.saveName();
       const pve = o.mode === 'pve';
-      this.send({ t: 'create', name: pve ? `${this.playerName()}的挑战` : `${this.playerName()}的战场`, goal: +o.goal, max: +o.max, primary: this.g.opts.primary, mode: o.mode, diff: o.diff, map: o.map });
+      this.send({ t: 'create', name: pve ? `${this.playerName()}的挑战` : `${this.playerName()}的战场`, goal: goalVal(), max: +o.max, primary: this.g.opts.primary, mode: o.mode, diff: o.diff, map: o.map });
       this.setStatus(pve ? '正在开启僵尸挑战…' : '正在创建…');
     });
     d.querySelector('#netBack').addEventListener('click', () => this.closeLobby());
@@ -271,6 +283,7 @@ export class NetGame {
     if (this.lobby) this.lobby.classList.add('hidden');
     this.room = w.room; this.myId = w.you; this.ticket = w.ticket || this.ticket;
     this.ensureLamp();                                     // 先备好 BOSS 灯，换装时直接挂上
+    if (w.room.mode === 'pve') prewarmBossFx(g.renderer.renderer, g.renderer.scene, g.renderer.camera);   // 加载期编好 BOSS 着色器，登场零编译
     this.isHost = w.room.owner === w.you;
     this.state = 'play'; this.inMatch = true; this.manualLeave = false;
     this.spectate = false; this.specTab = false; this.boardShown = false;
@@ -389,6 +402,7 @@ export class NetGame {
     g.hud.show(null);
     this.room = m.room;                                   // 观战也要知道房间模式（补给站 / BOSS 血条）
     this.ensureLamp();
+    if (m.room.mode === 'pve') prewarmBossFx(g.renderer.renderer, g.renderer.scene, g.renderer.camera);   // 观战同样会在场上看到 BOSS，先编好
     for (const r of m.roster) this.ensureRemote(r);
     this.supMask = m.sup || 0; this.dp = m.dp || [];
     for (const r of m.roster) if (r.boss) this.boss = { id: r.id, nm: r.boss === 2 ? (r.bnm || r.name) : r.name, hp: r.hp, hpMax: r.hpMax, by: r.boss === 2 ? 1 : 0, who: r.boss === 2 ? r.name : '' };

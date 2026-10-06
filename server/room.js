@@ -31,7 +31,7 @@ export class Room {
   constructor(id, o = {}) {
     this.id = id;
     this.name = String(o.name || `房间 ${id}`).slice(0, 24);
-    this.goal = [30, 50, 100].includes(o.goal) ? o.goal : 50;
+    this.goal = Math.max(1, Math.min(999, Math.round(+o.goal) || 50));
     this.max = Math.max(2, Math.min(16, o.max | 0 || 16));
     this.onEmpty = o.onEmpty || (() => {});
     this.onCheat = o.onCheat || null;

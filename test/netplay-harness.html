@@ -171,6 +171,24 @@ try {
     ok(boss.soldier.extras.length >= 8 && !!boss.soldier.aura && boss.soldier.hideGun === true && boss.soldier.hitMat === 'metal', '铁皮暴君：轮廓件 + 地面警示环 + 不扛枪');
     boss.soldier.setWeapon('m249');
     ok(boss.soldier.gun && boss.soldier.gun.visible === false, 'BOSS 的枪械网格隐藏（弹道锚点仍在）');
+    // —— 卡死回归：BOSS 登场卡的不是填充率，是"每只都新建 4~6 个材质→现编译着色器"（实测登场帧 ~500ms，全客户端同时卡）
+    // 修复后材质按 (种类,附身) 池化复用：同种第二次登场必须拿回同一套对象，零新建即零编译。
+    // 用独立 Soldier + 空 opts（不挂共享灯），彻底不碰上面 tyran 的灯状态
+    const { Soldier: BSoldier } = await import('/src/character.js');
+    const { dressSoldier, undressSoldier, prewarmBossFx } = await import('/src/bosslook.js');
+    const sa = new BSoldier('GR'); dressSoldier(sa, 'mother', false, {});
+    const setA = sa.matSet;
+    ok(!!setA && Array.isArray(setA.list) && setA.list.length >= 4, 'BOSS 换装产出一整套可复用材质', `n=${setA && setA.list.length}`);
+    ok(!!sa.aura && sa.aura.material.opacity > 0.1 && !!sa.fxRefs.halo && !!sa.fxRefs.beam, '母体自带光环 / 光晕 / 天光柱');
+    undressSoldier(sa);                                       // 归还池子（不 dispose）
+    const sb = new BSoldier('GR'); dressSoldier(sb, 'mother', false, {});
+    ok(sb.matSet === setA, '同种 BOSS 二次登场复用同一套材质（零新建 = 零着色器编译）');
+    ok(sb.aura && sb.aura.material.opacity > 0.1 && sb.aura.material.transparent === true, '复用材质已复位（透明度不带上一只的残值）', `op=${sb.aura && sb.aura.material.opacity}`);
+    undressSoldier(sb);
+    // 预编译入口：无真实渲染器（stub）时也要安全返回、不抛
+    let prewarmThrew = false;
+    try { prewarmBossFx(gL.renderer.renderer, gL.renderer.scene, gL.renderer.camera); } catch (e) { prewarmThrew = true; }
+    ok(!prewarmThrew, 'prewarmBossFx 缺渲染器时优雅降级（不抛异常）');
     let aerr = null;
     try { for (let i = 0; i < 4; i++) boss.soldier.update(0.016, { speed: 4, fwd: 1, crouch: false, pitch: 0.1, onGround: true }); } catch (e) { aerr = e; }
     ok(!aerr && boss.soldier.breathT > 0.05, 'BOSS 带配件的动画可正常推进', aerr ? String(aerr).slice(0, 120) : '');
@@ -211,7 +229,10 @@ try {
     ok(R.light.o.intensity > 10 && R.beam.material.opacity > 0, '每帧驱动光强与光柱透明度', `li=${R.light && R.light.o.intensity.toFixed(1)}`);
     bump(boss.soldier, 2); boss.soldier.update(0.016, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
     const litUp = R.light.o.intensity;
-    boss.soldier.update(0.4, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    // 光强用的是每帧"入场时"的脉冲值：连走两段中等步长，末帧入场脉冲(≈0.47)明显低于 litUp(≈1.1)，
+    // 收尾脉冲(≈0.21)仍落在 0.1~1 内，避免 ±0.15 呼吸正弦盖过脉冲差导致断言随相位忽过忽不过
+    boss.soldier.update(0.25, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    boss.soldier.update(0.25, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
     ok(R.pulse > 0.1 && R.pulse < 1 && R.light.o.intensity < litUp, '登场 / 起手脉冲顶亮光效后自然衰减', `p=${R.pulse.toFixed(2)}`);
     // 一盏灯全场共用：BOSS 换人（AI -> 附身 / 附身 -> AI）时只换手，不新增光源
     const lamp = R.light.o;
@@ -286,6 +307,24 @@ try {
   A.renderRooms([{ id: '1', name: '演示房', n: 3, max: 8, bl: 1, gr: 2, goal: 50, state: 'play', timeLeft: 40 }]);
   ok(lobby.querySelector('#roomList').innerHTML.includes('演示房'), '房间列表渲染');
   ok(!!lobby.querySelector('.seg[data-kg="mode"]') && !!lobby.querySelector('#pveOpt .seg[data-kg="diff"]'), '大厅含 PVE 模式与难度选择');
+  // 目标击杀可手输：预设同步 / 自定义值 / 发送时夹取到 1~999
+  const goalInp = lobby.querySelector('#netGoal');
+  ok(!!goalInp && goalInp.min === '1' && goalInp.max === '999', '大厅有目标击杀输入框（1~999）');
+  lobby.querySelector('.seg[data-kg="goal"] button[data-v="100"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok(goalInp.value === '100', '点预设「100杀」同步到输入框', goalInp.value);
+  goalInp.value = '250'; goalInp.dispatchEvent(new Event('input', { bubbles: true }));
+  ok(!lobby.querySelector('.seg[data-kg="goal"] button[data-v="100"]').classList.contains('on'), '手输自定义值会取消预设高亮');
+  const realSend = A.send; let sent = null;
+  A.send = (m) => { sent = m; };
+  lobby.querySelector('#netCreate').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok(sent && sent.t === 'create' && sent.goal === 250, '创建房间带上手输的目标击杀', sent && String(sent.goal));
+  goalInp.value = '9999'; goalInp.dispatchEvent(new Event('input', { bubbles: true }));
+  sent = null; lobby.querySelector('#netQuick').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok(sent && sent.goal === 999, '超出上限的目标击杀被夹到 999', sent && String(sent.goal));
+  goalInp.value = '0'; goalInp.dispatchEvent(new Event('input', { bubbles: true }));
+  sent = null; lobby.querySelector('#netQuick').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  ok(sent && sent.goal === 1, '低于下限的目标击杀被夹到 1', sent && String(sent.goal));
+  A.send = realSend;
   A.renderRooms([{ id: '2', name: '挑战房', n: 2, max: 8, bl: 2, gr: 0, goal: 50, state: 'play', timeLeft: 400, mode: 'pve', diff: 'hard', wave: 3, score: { BL: 21, GR: 2 } }]);
   const pveRow = lobby.querySelector('#roomList').innerHTML;
   ok(pveRow.includes('PVE 困难') && pveRow.includes('第 4 波') && !pveRow.includes('潜伏'), '房间列表标注 PVE 波次/难度');

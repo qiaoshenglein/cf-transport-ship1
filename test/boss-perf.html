@@ -15,7 +15,7 @@ import { mapOf } from '/src/maps.js';
 import { Environment } from '/src/env.js';
 import { Effects } from '/src/effects.js';
 import { Soldier } from '/src/character.js';
-import { dressSoldier, undressSoldier, bump, emitAmbient } from '/src/bosslook.js';
+import { dressSoldier, undressSoldier, bump, emitAmbient, prewarmBossFx } from '/src/bosslook.js';
 
 const out = document.getElementById('out');
 const say = (s) => { out.textContent += s + '\n'; };
@@ -47,9 +47,9 @@ const info = () => {
   const r = renderer.renderer.info;
   return { calls: r.render.calls, tri: r.render.triangles, prog: r.programs.length, tex: r.memory.textures, geo: r.memory.geometries };
 };
-function phase(name, frames, prep) {
+function phase(name, frames, prep, warm = 3) {
   if (prep) prep();
-  for (let i = 0; i < 3; i++) { renderer.render(); }   // 预热（首帧含编译，不计入）
+  for (let i = 0; i < warm; i++) { renderer.render(); }   // 预热（首帧含编译，不计入）
   const t0 = performance.now();
   const list = [];
   for (let i = 0; i < frames; i++) {
@@ -77,7 +77,7 @@ phase('B 换装但不可见', 6, () => {
   dressMs = performance.now() - t;
   sol.root.visible = false;
 });
-const first = phase('C 第一次显形（登场帧）', 6, () => { sol.root.visible = true; });
+const first = phase('C 冷登场首帧（无预编译）', 6, () => { sol.root.visible = true; }, 0);
 const after = phase('D 显形之后（稳态）', 6);
 phase('E 再量一遍稳态', 6);
 const show = (k, on) => { for (const e of sol.extras || []) if (e.userData.tag === k) e.visible = on; };
@@ -99,13 +99,16 @@ phase('I 模拟贴脸淡出', 5, () => { if (sol.fxRefs) sol.fxRefs.lod = 1; });
 phase('J 拉开到远处', 5, () => { if (sol.fxRefs) sol.fxRefs.lod = 0; renderer.camera.position.set(4.5, 2.2, 8.5); });
 // 登场脉冲 + 本体喷发
 phase('K 登场脉冲 + 喷发', 5, () => { bump(sol, 2.2); for (let i = 0; i < 60; i++) emitAmbient(sol, fx, 1); });
-// 预编译闸门：把登场帧的编译成本挪到加载期
-phase('L 预编译之后再现形', 6, () => {
+// 预编译闸门：把登场帧的编译成本挪到加载期，再冷启一次登场做前后对比
+phase('L 卸装 + 预编译', 3, () => {
   sol.root.visible = false; undressSoldier(sol);
-  dressSoldier(sol, 'mother', false, { lamp: null }); tag();
-  renderer.renderer.compile(renderer.scene, renderer.camera);
-  sol.root.visible = true;
+  const pw = prewarmBossFx(renderer.renderer, renderer.scene, renderer.camera);
+  say(`  prewarmBossFx 预编译 ${pw} 件材质 → 程序数 ${info().prog}`);
 });
-say(`换装 JS 耗时 ${dressMs.toFixed(1)}ms  登场首帧最差 ${first.worst.toFixed(0)}ms（基线 ${base.worst.toFixed(0)}ms）`);
+const warmFirst = phase('M 预编译后·冷登场首帧', 6, () => {
+  dressSoldier(sol, 'mother', false, { lamp: null }); tag();
+  sol.root.visible = true;
+}, 0);
+say(`换装 JS ${dressMs.toFixed(1)}ms  登场首帧最差：无预编译 ${first.worst.toFixed(0)}ms → 预编译后 ${warmFirst.worst.toFixed(0)}ms（基线最差 ${base.worst.toFixed(0)}ms）`);
 </script>
 </body></html>

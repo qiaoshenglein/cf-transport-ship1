@@ -183,15 +183,16 @@ function makeSet(L, possessed) {
   if (L.beam) s.beam = new THREE.MeshBasicMaterial({ map: beamTex(), color: new THREE.Color(L.glow).multiplyScalar(1.5), transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, toneMapped: false });
   if (possessed) s.core = new THREE.MeshStandardMaterial({ color: 0x0b1a22, emissive: 0x49d8ff, emissiveIntensity: 2.6, roughness: 0.3, toneMapped: false });
   s.list = [s.AM, s.EM, s.aura, s.halo, s.beam, s.core].filter(Boolean);
+  s.bloom = L.bloom || 2.4;
   return s;
 }
-// 归还前把动画量复位，免得上一只的脉冲/淡出串到下一只
+// 归还前把动画量与淡出痕迹全部复位，免得上一只的脉冲/透明串到下一只
 function resetSet(s) {
-  s.EM.emissiveIntensity = 0;
+  for (const m of s.list) { m.userData = {}; if (m.opacity !== undefined) m.opacity = 1; if ('transparent' in m) m.transparent = false; }
+  s.EM.emissiveIntensity = s.bloom;
   if (s.aura) { s.aura.opacity = 0.22; s.aura.transparent = true; }
-  if (s.halo) { s.halo.opacity = 0.7; }
-  if (s.beam) { s.beam.opacity = 0.09; }
-  for (const m of s.list) { m.userData = {}; }
+  if (s.halo) s.halo.opacity = 0.7;
+  if (s.beam) s.beam.opacity = 0.09;
 }
 function takeSet(key, possessed) {
   const ck = `${key}|${possessed ? 'p' : 'a'}`;
@@ -212,7 +213,7 @@ function accParts(key) {
   const L = LOOKS[key];
   const items = L && L.acc ? L.acc(null, null) : [];
   const geos = items.map((it) => (it.g.length ? fuse(it.g) : null));
-  for (const it of items) for (const g of it.g) g.dispose();
+  for (const it of items) for (const t of it.g) if (t[0] && t[0].dispose) t[0].dispose();   // t 是 [几何, x,y,z,…] 元组，dispose 里面的几何
   const out = { desc: items.map((it, i) => ({ b: it.b, m: it.m, has: !!geos[i] })), geos };
   GEO_CACHE.set(key, out);
   return out;
@@ -379,8 +380,9 @@ export function dressSoldier(sol, key, possessed, optsIn) {
 
 export function undressSoldier(sol) {
   if (!sol) return;
+  // 配件只从骨骼上摘下来，几何与材质都是缓存池里的，绝不 dispose（否则下一只同类又要现编译）
   if (sol.extras) {
-    for (const m of sol.extras) { if (m.parent) m.parent.remove(m); if (m.geometry) m.geometry.dispose(); }
+    for (const m of sol.extras) if (m.parent) m.parent.remove(m);
     sol.extras = null;
   }
   if (sol.fxRefs) {
@@ -393,7 +395,9 @@ export function undressSoldier(sol) {
     }
     sol.fxRefs = null;
   }
-  if (sol.extraMats) { for (const m of sol.extraMats) m.dispose(); sol.extraMats = null; }
+  giveSet(sol.matKey, sol.matPoss, sol.matSet);   // 整套材质归还池子，动画量已在 giveSet 里复位
+  sol.matSet = null; sol.matKey = null; sol.matPoss = null;
+  sol.extraMats = null;
   if (sol.lookKey) {
     const body = sol.material;
     body.color.setHex(0xffffff); body.roughness = 0.82; body.metalness = 0.05;
