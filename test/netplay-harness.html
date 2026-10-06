@@ -189,6 +189,15 @@ try {
     let prewarmThrew = false;
     try { prewarmBossFx(gL.renderer.renderer, gL.renderer.scene, gL.renderer.camera); } catch (e) { prewarmThrew = true; }
     ok(!prewarmThrew, 'prewarmBossFx 缺渲染器时优雅降级（不抛异常）');
+    // 回归：applyRemote 每帧对"已换装远端"跑 LOD/粒子分支——这里曾误用未定义的 g，导致一进 PVE 每帧抛错、渲染循环中断（全客户端卡死）
+    const { F } = await import('/src/netsim.js');
+    boss.alive = true;                                       // 置活：避免 applyRemote 走 reset() 改动共享的 boss 体型
+    L.buf = [{ st: 0, ps: new Map([[9003, [9003, 900, 0, 0, 0, 0, F.alive | F.online | F.ground, 0, 0, 0]]]) }];   // 放在 900m 外：跑 LOD 但不触发粒子（stub fx 无 add/smoke）
+    let arErr = null;
+    try { L.applyRemote(9003, boss, 0, 0.016); } catch (e) { arErr = e; }
+    ok(!arErr, 'applyRemote 对已换装远端不抛错（LOD/粒子分支作用域正确）', arErr && String(arErr && arErr.message || arErr).slice(0, 120));
+    ok(boss.soldier.fxRefs && typeof boss.soldier.fxRefs.lod === 'number', 'applyRemote 写入了 LOD 淡出系数');
+    boss.soldier.root.position.set(0, 0, 0);                 // 复位，免得影响后续贴合骨骼断言
     let aerr = null;
     try { for (let i = 0; i < 4; i++) boss.soldier.update(0.016, { speed: 4, fwd: 1, crouch: false, pitch: 0.1, onGround: true }); } catch (e) { aerr = e; }
     ok(!aerr && boss.soldier.breathT > 0.05, 'BOSS 带配件的动画可正常推进', aerr ? String(aerr).slice(0, 120) : '');

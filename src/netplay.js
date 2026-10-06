@@ -736,9 +736,9 @@ export class NetGame {
     if (a.curW !== wid) { a.curW = wid; a.soldier.setWeapon(wid || 'knife'); }
     // 离镜头越近，加性光斑越该退场：BOSS 贴脸时这几层面片就是全屏，帧时能吃掉整场的 6 倍
     if (a.soldier.fxRefs) {
-      const dc = Math.sqrt(a.vPos.distanceToSquared(g.renderer.camera.position));
+      const dc = Math.sqrt(a.vPos.distanceToSquared(this.g.renderer.camera.position));
       bossLod(a.soldier, dc);
-      if (a.alive && a.isBoss && a.soldier.lookKey && dc < 55) emitAmbient(a.soldier, g.fx, dt);
+      if (a.alive && a.isBoss && a.soldier.lookKey && dc < 55) emitAmbient(a.soldier, this.g.fx, dt);
     }
     if (a.alive) {
       if (!wasAlive) { a.soldier.reset(); a.deadT = 0; }
