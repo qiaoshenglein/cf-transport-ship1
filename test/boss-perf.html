@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>PERF</title>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/addons/"}}</script>
+</head>
+<body style="background:#0a0e12;color:#dfe4e8;font:12px monospace">
+<canvas id="c" style="width:420px;height:320px;display:block"></canvas><pre id="out"></pre>
+<script type="module">
+// BOSS 登场性能探针：真实 WebGL（软件渲染）下量基线帧时 vs 母体登场帧时
+// 关注三件事：帧时、draw call / 三角面、着色器程序数（重编译风暴的指纹）
+import * as THREE from 'three';
+import { Renderer } from '/src/render.js';
+import { buildTextures } from '/src/textures.js';
+import { World } from '/src/physics.js';
+import { mapOf } from '/src/maps.js';
+import { Environment } from '/src/env.js';
+import { Effects } from '/src/effects.js';
+import { Soldier } from '/src/character.js';
+import { dressSoldier, undressSoldier, bump, emitAmbient } from '/src/bosslook.js';
+
+const out = document.getElementById('out');
+const say = (s) => { out.textContent += s + '\n'; };
+const mapId = new URLSearchParams(location.search).get('map') || 'ship';
+const qual = new URLSearchParams(location.search).get('q') || 'high';
+
+const renderer = new Renderer(document.getElementById('c'), qual);
+renderer.resize();
+const T = buildTextures(qual);
+const world = new World();
+const def = mapOf(mapId);
+const root = new THREE.Group();
+renderer.scene.add(root);
+const map = def.build(root, T, world, {});
+const env = new Environment(renderer.renderer, renderer.scene, qual);
+env.extraScenes = [renderer.vmScene];
+env.setMap(def); env.apply('day');
+const fx = new Effects(renderer.scene, T, renderer.camera);
+fx.initAmbient(map.funnelTop);
+
+// 相机顶到 BOSS 面前：填充率最坏情况
+const sol = new Soldier('GR');
+sol.root.position.set(0, 0, 0);
+renderer.scene.add(sol.root);
+renderer.camera.position.set(1.6, 1.5, 3.2);
+renderer.camera.lookAt(0, 1.4, 0);
+
+const info = () => {
+  const r = renderer.renderer.info;
+  return { calls: r.render.calls, tri: r.render.triangles, prog: r.programs.length, tex: r.memory.textures, geo: r.memory.geometries };
+};
+function phase(name, frames, prep) {
+  if (prep) prep();
+  for (let i = 0; i < 3; i++) { renderer.render(); }   // 预热（首帧含编译，不计入）
+  const t0 = performance.now();
+  const list = [];
+  for (let i = 0; i < frames; i++) {
+    const a = performance.now();
+    sol.update && sol.update(0.016, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    if (sol.onFrame) sol.onFrame(0.016);
+    const tt = performance.now() / 1000;
+    fx.update(0.016, tt, renderer.camera, 0);
+    if (env.update) env.update(0.016, tt, renderer.camera.position);
+    renderer.render();
+    list.push(performance.now() - a);
+  }
+  const ms = (performance.now() - t0) / frames;
+  const it = info();
+  say(`${name.padEnd(22)} ${ms.toFixed(1)}ms/帧  逐帧 ${list.map((v) => v.toFixed(0)).join(',')}ms  程序 ${it.prog}`);
+  return { ms, worst: Math.max(...list), ...it };
+}
+
+let dressMs = 0;
+const base = phase('A 无人（基线）', 8);
+// 先把 BOSS 装好但保持不可见：不可见的对象不会被渲染，着色器也就还没编译
+phase('B 换装但不可见', 6, () => {
+  const t = performance.now();
+  dressSoldier(sol, 'mother', false, { lamp: null });
+  dressMs = performance.now() - t;
+  sol.root.visible = false;
+});
+const first = phase('C 第一次显形（登场帧）', 6, () => { sol.root.visible = true; });
+const after = phase('D 显形之后（稳态）', 6);
+phase('E 再量一遍稳态', 6);
+const show = (k, on) => { for (const e of sol.extras || []) if (e.userData.tag === k) e.visible = on; };
+const tag = () => {
+  for (const e of sol.extras || []) {
+    if (e.isSprite) e.userData.tag = 'halo';
+    else if (e.geometry && e.geometry.type === 'RingGeometry') e.userData.tag = 'aura';
+    else if (e.geometry && e.geometry.type === 'CylinderGeometry') e.userData.tag = 'beam';
+    else e.userData.tag = 'acc';
+  }
+};
+tag();
+show('halo', false); phase('F 藏光晕', 5);
+show('halo', true); show('beam', false); phase('G 藏天光柱', 5);
+show('beam', true); show('aura', false); phase('H 藏地面环', 5);
+show('aura', true);
+// 贴脸（3m 内）时淡出闸门生效与否
+phase('I 模拟贴脸淡出', 5, () => { if (sol.fxRefs) sol.fxRefs.lod = 1; });
+phase('J 拉开到远处', 5, () => { if (sol.fxRefs) sol.fxRefs.lod = 0; renderer.camera.position.set(4.5, 2.2, 8.5); });
+// 登场脉冲 + 本体喷发
+phase('K 登场脉冲 + 喷发', 5, () => { bump(sol, 2.2); for (let i = 0; i < 60; i++) emitAmbient(sol, fx, 1); });
+// 预编译闸门：把登场帧的编译成本挪到加载期
+phase('L 预编译之后再现形', 6, () => {
+  sol.root.visible = false; undressSoldier(sol);
+  dressSoldier(sol, 'mother', false, { lamp: null }); tag();
+  renderer.renderer.compile(renderer.scene, renderer.camera);
+  sol.root.visible = true;
+});
+say(`换装 JS 耗时 ${dressMs.toFixed(1)}ms  登场首帧最差 ${first.worst.toFixed(0)}ms（基线 ${base.worst.toFixed(0)}ms）`);
+</script>
+</body></html>

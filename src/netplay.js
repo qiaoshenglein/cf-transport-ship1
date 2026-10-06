@@ -10,7 +10,7 @@ import { buildGunMerged } from './guns.js';
 import { audio } from './audio.js';
 import { SUPPLY_NAME } from './supplies.js';
 import { MAPS, MAP_IDS, mapName, suppliesForMap } from './maps.js';
-import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, BOSS_TINT } from './bosslook.js';
+import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, bossLod, BOSS_TINT } from './bosslook.js';
 
 const DT = 1 / TICK_RATE;
 const PVE_DIFF_CN = { easy: '轻松', normal: '普通', hard: '困难', hell: '炼狱' };
@@ -720,6 +720,12 @@ export class NetGame {
     a.wasOnline = online;
     a.yaw = a.vYaw; a.pitch = a.vPitch - a.punchP;
     if (a.curW !== wid) { a.curW = wid; a.soldier.setWeapon(wid || 'knife'); }
+    // 离镜头越近，加性光斑越该退场：BOSS 贴脸时这几层面片就是全屏，帧时能吃掉整场的 6 倍
+    if (a.soldier.fxRefs) {
+      const dc = Math.sqrt(a.vPos.distanceToSquared(g.renderer.camera.position));
+      bossLod(a.soldier, dc);
+      if (a.alive && a.isBoss && a.soldier.lookKey && dc < 55) emitAmbient(a.soldier, g.fx, dt);
+    }
     if (a.alive) {
       if (!wasAlive) { a.soldier.reset(); a.deadT = 0; }
       a.soldier.root.visible = true;
@@ -728,8 +734,6 @@ export class NetGame {
       const sp = Math.hypot(vx, vz); a.speed = sp;
       const fwd = sp > 0.01 ? (vx * -Math.sin(a.vYaw) + vz * -Math.cos(a.vYaw)) / sp : 0;
       a.soldier.update(dt, { speed: sp, fwd, crouch: a.crouch, pitch: a.vPitch, onGround: a.onGround, reloading: !!(f & F.reload) });
-      // BOSS 是移动发光体：只在近处冒粒子，远处省掉
-      if (a.isBoss && a.soldier.lookKey && a.vPos.distanceToSquared(g.renderer.camera.position) < 3025) emitAmbient(a.soldier, g.fx, dt);
       // 出生保护闪烁；断线者半透明式忽隐忽现（幽灵）
       a.soldier.mesh.visible = online ? !(a.protectT > 0 && Math.sin(this.g.time * 30) > 0.3) : Math.sin(this.g.time * 5) > -0.2;
     } else {

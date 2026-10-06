@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { Renderer } from './render.js';
 import { buildTextures } from './textures.js';
-import { mapOf, MAPS } from './maps.js';
+import { mapOf, mapName, MAPS } from './maps.js';
 import { disposeMap } from './mapkit.js';
 import { Environment } from './env.js';
 import { World, NavGrid } from './physics.js';
@@ -727,10 +727,23 @@ export class Game {
     if (this.fpsAcc > 1) {
       this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0;
       const lbl = document.querySelector('#radarWrap .lbl');
-      if (lbl) lbl.textContent = `运输船 · ${this.fps} FPS`;
+      if (lbl) lbl.textContent = `${mapName(this.mapId)} · ${this.fps} FPS`;
       if (this.playing && !this.paused && this.time > 8 && !this.fpsHinted && this.fps < 32 && this.opts.quality !== 'low') {
         this.fpsHinted = true;
         this.hud.toast('帧率较低：可按 Esc 在主菜单把画质调到「均衡」或「流畅」', 5);
+      }
+      // 持续掉帧就自己动手降负载：先按 1:1 像素渲染，再关辉光。
+      // 只降不升（避免来回抖），最多两档 —— BOSS 登场这类突发最容易把弱机直接钉死
+      this.slow = this.fps < 34 ? (this.slow || 0) + 1 : 0;
+      if (this.playing && !this.paused && this.time > 6 && this.slow >= 2 && (this.qStep || 0) < 2) {
+        this.slow = 0; this.qStep = (this.qStep || 0) + 1;
+        if (this.qStep === 1) {
+          this.renderer.renderer.setPixelRatio(1); this.renderer.resize();
+          this.hud.toast('帧率偏低：已自动把渲染分辨率降到 1:1', 4);
+        } else if (this.renderer.bloom) {
+          this.renderer.bloom.enabled = false;
+          this.hud.toast('帧率仍偏低：已自动关闭辉光', 4);
+        }
       }
     }
     // 音频监听者

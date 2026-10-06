@@ -169,6 +169,91 @@ export function lookOf(kind, boss) { return LOOKS[kind] || (boss ? LOOKS.tyran :
 const AArmor = (L) => new THREE.MeshStandardMaterial({ color: L.tint, roughness: Math.max(0.3, L.rough - 0.18), metalness: Math.min(1, L.metal + 0.35) });
 const AGlow = (L) => new THREE.MeshStandardMaterial({ color: 0x14100c, emissive: L.glow, emissiveIntensity: L.bloom || 2.4, roughness: 0.4, metalness: 0, toneMapped: false });
 
+// —— 换装产物缓存（这次卡死的真正解法）
+// 每套 BOSS 外观要新建 4~6 个材质，浏览器会在它们第一次进画面时现编译着色器：
+// 实测登场那一帧 ~500ms（软件渲染下更久），而且所有客户端同一时刻一起卡。
+// 旧代码回收时把材质 dispose 掉 → 程序缓存被释放 → 下一只同类再编译一遍，于是每次登场都卡。
+// 现在按 (种类, 是否附身) 做成免费池：材质与融合后的几何终身复用，第二次登场零编译零分配。
+const POOL = new Map();
+const GEO_CACHE = new Map();
+function makeSet(L, possessed) {
+  const s = { AM: AArmor(L), EM: AGlow(L) };
+  if (L.aura) s.aura = new THREE.MeshBasicMaterial({ color: possessed ? 0x49d8ff : L.aura.c, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+  if (L.halo) s.halo = new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(L.glow).multiplyScalar(2.4), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.7 });
+  if (L.beam) s.beam = new THREE.MeshBasicMaterial({ map: beamTex(), color: new THREE.Color(L.glow).multiplyScalar(1.5), transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, toneMapped: false });
+  if (possessed) s.core = new THREE.MeshStandardMaterial({ color: 0x0b1a22, emissive: 0x49d8ff, emissiveIntensity: 2.6, roughness: 0.3, toneMapped: false });
+  s.list = [s.AM, s.EM, s.aura, s.halo, s.beam, s.core].filter(Boolean);
+  return s;
+}
+// 归还前把动画量复位，免得上一只的脉冲/淡出串到下一只
+function resetSet(s) {
+  s.EM.emissiveIntensity = 0;
+  if (s.aura) { s.aura.opacity = 0.22; s.aura.transparent = true; }
+  if (s.halo) { s.halo.opacity = 0.7; }
+  if (s.beam) { s.beam.opacity = 0.09; }
+  for (const m of s.list) { m.userData = {}; }
+}
+function takeSet(key, possessed) {
+  const ck = `${key}|${possessed ? 'p' : 'a'}`;
+  let p = POOL.get(ck);
+  if (!p) POOL.set(ck, (p = { free: [] }));
+  return p.free.pop() || makeSet(LOOKS[key], possessed);
+}
+function giveSet(key, possessed, s) {
+  if (!s) return;
+  resetSet(s);
+  const ck = `${key}|${possessed ? 'p' : 'a'}`;
+  if (!POOL.has(ck)) POOL.set(ck, { free: [] });
+  POOL.get(ck).free.push(s);
+}
+// 轮廓件：acc() 里的 A/E 参数只是形参（几何与材质无关），所以整套描述与融合结果都能按种类缓存
+function accParts(key) {
+  if (GEO_CACHE.has(key)) return GEO_CACHE.get(key);
+  const L = LOOKS[key];
+  const items = L && L.acc ? L.acc(null, null) : [];
+  const geos = items.map((it) => (it.g.length ? fuse(it.g) : null));
+  for (const it of items) for (const g of it.g) g.dispose();
+  const out = { desc: items.map((it, i) => ({ b: it.b, m: it.m, has: !!geos[i] })), geos };
+  GEO_CACHE.set(key, out);
+  return out;
+}
+// 光环 / 天光柱 / 旋核的几何同样只跟种类有关
+const PRIM_CACHE = new Map();
+function primGeos(key, possessed) {
+  const ck = `${key}|${possessed ? 'p' : 'a'}`;
+  if (PRIM_CACHE.has(ck)) return PRIM_CACHE.get(ck);
+  const L = LOOKS[key], o = {};
+  if (L.aura) { const g = new THREE.RingGeometry(L.aura.r * 0.9, L.aura.r, 32); g.rotateX(-Math.PI / 2); o.ring = g; }
+  if (L.beam) o.beam = new THREE.CylinderGeometry(L.beam.r1, L.beam.r2, L.beam.h, 14, 1, true);
+  if (possessed) { o.core = new THREE.OctahedronGeometry(0.13); o.shard = new THREE.TetrahedronGeometry(0.07); }
+  PRIM_CACHE.set(ck, o);
+  return o;
+}
+// 加载期把三种 BOSS（含附身版）的着色器全部编好：登场那一帧就只剩挂接与移动
+export function prewarmBossFx(renderer, scene, camera) {
+  if (!renderer || !scene || !camera) return 0;
+  const box = new THREE.BoxGeometry(0.02, 0.02, 0.02);
+  const grp = new THREE.Group();
+  grp.visible = false;                      // compile 不看 visible，隐藏组照样能把程序编出来
+  scene.add(grp);
+  let n = 0;
+  for (const key of ['tyran', 'mother', 'shade']) {
+    for (const poss of [false, true]) {
+      const set = takeSet(key, poss);
+      for (const m of set.list) {
+        const o = m.isSpriteMaterial ? new THREE.Sprite(m) : new THREE.Mesh(box, m);
+        o.position.set(0, -900, 0);
+        grp.add(o); n++;
+      }
+      giveSet(key, poss, set);
+    }
+  }
+  try { renderer.compile(scene, camera); } catch (e) { /* 编译失败就照常留到登场时编 */ }
+  scene.remove(grp);
+  box.dispose();
+  return n;
+}
+
 // 上装：把一副人类士兵骨架改扮成怪物 / BOSS。opts.lights=false 时跳过动态点光源（低画质）
 export function dressSoldier(sol, key, possessed, optsIn) {
   const opts = optsIn || {};
@@ -190,67 +275,63 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   sol.hideGun = !!L.noGun;
   if (sol.gun) sol.gun.visible = !L.noGun;
 
-  const mats = [], extras = [];
-  const AM = AArmor(L), EM = AGlow(L);
-  if (L.acc) {
-    for (const item of L.acc(AM, EM)) {
-      const bone = sol.B[item.b];
-      if (!bone || !item.g.length) continue;
-      const mat = item.m === 'E' ? EM : AM;
-      const mesh = new THREE.Mesh(fuse(item.g), mat);
-      mesh.scale.set(ax, ay, az);
-      mesh.castShadow = false; mesh.receiveShadow = false; mesh.frustumCulled = false;
-      bone.add(mesh); extras.push(mesh);
-    }
+  // 材质与几何全部走缓存：第二次登场只是把现成的东西挂到骨骼上
+  const set = takeSet(key, possessed);
+  const AM = set.AM, EM = set.EM;
+  const mats = set.list, extras = [];
+  const parts = accParts(key), pg = primGeos(key, possessed);
+  sol.matSet = set; sol.matKey = key; sol.matPoss = !!possessed;
+  for (let i = 0; i < parts.desc.length; i++) {
+    const it = parts.desc[i];
+    const bone = sol.B[it.b];
+    if (!bone || !it.has) continue;
+    const mesh = new THREE.Mesh(parts.geos[i], it.m === 'E' ? EM : AM);
+    mesh.scale.set(ax, ay, az);
+    mesh.castShadow = false; mesh.receiveShadow = false; mesh.frustumCulled = false;
+    bone.add(mesh); extras.push(mesh);
   }
-  mats.push(AM, EM);
   // 地面警示环 = 技能半径，隔着烟雾也能看出它是什么、有多大
-  if (L.aura) {
-    const geo = new THREE.RingGeometry(L.aura.r * 0.84, L.aura.r, 44);
-    geo.rotateX(-Math.PI / 2);
-    const mat = new THREE.MeshBasicMaterial({ color: possessed ? 0x49d8ff : L.aura.c, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    const ring = new THREE.Mesh(geo, mat);
+  if (L.aura && pg.ring) {
+    const ring = new THREE.Mesh(pg.ring, set.aura);
     ring.position.y = 0.06; ring.renderOrder = 3;
-    sol.root.add(ring); extras.push(ring); mats.push(mat);
+    sol.root.add(ring); extras.push(ring);
     sol.aura = ring;
   }
   // 玩家附身的 BOSS：头顶旋核 + 双翼碎片，明确"这里面装的是人"
-  if (possessed) {
-    const cm = new THREE.MeshStandardMaterial({ color: 0x0b1a22, emissive: 0x49d8ff, emissiveIntensity: 2.6, roughness: 0.3, toneMapped: false });
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.13), cm);
+  if (possessed && set.core) {
+    const core = new THREE.Mesh(pg.core, set.core);
     core.position.set(0, 0.4, 0);
     const orbit = new THREE.Group();
     for (const sx of [1, -1]) {
-      const sh = new THREE.Mesh(new THREE.TetrahedronGeometry(0.07), cm);
+      const sh = new THREE.Mesh(pg.shard, set.core);
       sh.position.set(sx * 0.3, 0, 0); orbit.add(sh);
     }
     orbit.position.set(0, 0.36, 0);
     sol.B.head.add(core); sol.B.head.add(orbit);
     core.scale.set(ax, ay, az); orbit.scale.set(ax, ay, az);
-    extras.push(core, orbit); mats.push(cm);
+    extras.push(core, orbit);
     sol.crown = { core, orbit };
   }
   // 本体光源 + 光晕 + 天光柱：BOSS 站到那儿就是一个发光体，隔船舱也能看见它在挪
-  const refs = { pulse: 0, mats: { AM, EM } };
-  if (L.halo) {
+  // ⚠️ 这三样都是"整屏级"的加性面片：母体的地面环 9.2m 直径 + 天光柱 6.5m 高 + 光晕 2.6m，
+  // 贴脸时三层叠加能把帧时吃到整场的 6 倍（实测 ×6.76），所以全部按"离镜头多远"做淡出
+  const refs = { pulse: 0, lod: 0, mats: { AM, EM } };
+  if (L.halo && set.halo) {
     const hb = sol.B[L.halo.b] || sol.B.chest;
-    const hm = new THREE.SpriteMaterial({ map: glowTex(), color: new THREE.Color(L.glow).multiplyScalar(2.4), blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: 0.7 });
-    const halo = new THREE.Sprite(hm);
+    const halo = new THREE.Sprite(set.halo);
     halo.position.set(0, L.halo.y, L.halo.z);
     // Sprite 的屏幕尺寸按父骨骼的世界缩放放大（母体横向 3.3 倍），先折算回设计米数：
-    // 否则一张加性光片就有十几米，登场瞬间整屏被高光糊住、客户端直接卡死
+    // 否则一张加性光片就有十几米，登场瞬间整屏被高光糊住
     const hx = L.halo.s / (s * ws), hy = L.halo.s / s;
     halo.scale.set(hx, hy, 1); halo.renderOrder = 6;
-    hb.add(halo); extras.push(halo); mats.push(hm);
+    hb.add(halo); extras.push(halo);
     refs.halo = { o: halo, sx: hx, sy: hy };
   }
-  if (L.beam) {
-    const bm = new THREE.MeshBasicMaterial({ map: beamTex(), color: new THREE.Color(L.glow).multiplyScalar(1.5), transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-    const geo = new THREE.CylinderGeometry(L.beam.r1, L.beam.r2, L.beam.h, 14, 1, true);
-    const beam = new THREE.Mesh(geo, bm);
+  if (L.beam && set.beam && pg.beam) {
+    const beam = new THREE.Mesh(pg.beam, set.beam);
     beam.position.y = L.beam.h * 0.5 - 0.2;
     beam.renderOrder = 5;
-    sol.root.add(beam); extras.push(beam); mats.push(bm);
+    sol.root.add(beam); extras.push(beam);
     refs.beam = beam;
   }
   if (L.lamp && opts.lamp) {
@@ -280,16 +361,18 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   const bloomBase = L.bloom || 2.4;
   sol.onFrame = (dt) => {
     const p = refs.pulse || 0, fd = refs.fade === undefined ? 1 : refs.fade;
+    // 贴脸时把加性面片淡到两成：登场那一刻BOSS 就在脸上，这几层除了糊屏什么也表达不了
+    const ld = 1 - 0.8 * (refs.lod || 0);
     refs.pulse = p > 0.001 ? p * Math.exp(-dt * 3.2) : 0;
-    EM.emissiveIntensity = bloomBase + Math.sin(sol.breathT * (L.beat || 2.2)) * pulse + p * 7;
+    EM.emissiveIntensity = bloomBase + Math.sin(sol.breathT * (L.beat || 2.2)) * pulse + p * 4;
     if (refs.halo) {
-      const k = (1 + p * 0.5) * fd;
-      refs.halo.o.material.opacity = Math.min(0.8, (0.5 + Math.sin(sol.breathT * 2.2) * 0.12 + p * 0.4) * fd);
+      const k = (1 + p * 0.25) * fd * ld;
+      refs.halo.o.material.opacity = Math.min(0.5, (0.5 + Math.sin(sol.breathT * 2.2) * 0.12 + p * 0.4) * fd * ld);
       refs.halo.o.scale.set(refs.halo.sx * k, refs.halo.sy * k, 1);
     }
-    if (refs.beam) refs.beam.material.opacity = (0.085 + Math.sin(sol.breathT * 1.4) * 0.02 + p * 0.16) * fd;
+    if (refs.beam) refs.beam.material.opacity = Math.min(0.1, (0.085 + Math.sin(sol.breathT * 1.4) * 0.02 + p * 0.16) * fd * ld);
     if (refs.light && refs.light.o.userData.holder === sol) refs.light.o.intensity = refs.light.i * (0.85 + Math.sin(sol.breathT * 2.4) * 0.15 + p * 1.3) * fd;
-    if (sol.aura) sol.aura.material.opacity = (0.16 + Math.sin(sol.breathT * 1.8) * 0.07 + p * 0.5) * fd;
+    if (sol.aura) sol.aura.material.opacity = Math.min(0.26, (0.16 + Math.sin(sol.breathT * 1.8) * 0.07 + p * 0.5) * fd * ld);
     if (sol.crown) { sol.crown.core.rotation.y += dt * 2.6; sol.crown.orbit.rotation.y -= dt * 1.5; }
   };
 }
@@ -328,7 +411,14 @@ export function hitMatOf(a) { return (a && a.soldier && a.soldier.hitMat) || 'fl
 
 // 登场 / 技能起手 / 受击：把光效顶一下，随后几秒自然衰减
 export function bump(sol, k = 1) {
-  if (sol && sol.fxRefs) sol.fxRefs.pulse = Math.min(2.2, (sol.fxRefs.pulse || 0) + k);
+  if (sol && sol.fxRefs) sol.fxRefs.pulse = Math.min(1.1, (sol.fxRefs.pulse || 0) + k);
+}
+
+// 观者距离决定加性面片的淡出系数：3m 内淡到两成，8m 外全额显示
+// 这一条是"BOSS 登场把整屏糊死"的闸门——面片本身没变，变的是它占多少像素
+export function bossLod(sol, d) {
+  const R = sol && sol.fxRefs;
+  if (R) R.lod = d < 3 ? 1 : d > 8 ? 0 : 1 - (d - 3) / 5;
 }
 
 const _w = new THREE.Vector3();
