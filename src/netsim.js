@@ -30,7 +30,8 @@ export function applyCmd(a, c, world, others, H) {
   a.yaw = c.y; a.pitch = c.p;
   const [wx, wz] = wishDir(c.y, c.f, c.r);
   const w = a.inv[a.slot];
-  const ev = moveStep(a, c.d, { wx, wz, jump: !!(c.b & B.jump), crouch: !!(c.b & B.crouch), walk: !!(c.b & B.walk), speedMul: w ? w.def.speed : 1 }, world, others);
+  // a.spdMul 只由服务端权威实体（PVE 怪物）设置；真人 / 客户端预测恒为 1，不引入和解漂移
+  const ev = moveStep(a, c.d, { wx, wz, jump: !!(c.b & B.jump), crouch: !!(c.b & B.crouch), walk: !!(c.b & B.walk), speedMul: (w ? w.def.speed : 1) * (a.spdMul || 1) }, world, others);
   a.walk = !!(c.b & B.walk);
   weaponStep(a, c.d, {
     fire: !!(c.b & B.fire), firePressed: !!(c.b & B.fireP), alt: !!(c.b & B.alt), altPressed: !!(c.b & B.altP),
@@ -57,6 +58,7 @@ const WF = ['mag', 'reserve', 'nextFire', 'reloadUntil', 'shotsFired', 'spreadAc
 export function packSelf(a) {
   return {
     ack: a.ack, pt: a.pt, life: a.life, prim: a.primary, ss: a.shotSeed, sn: a.shotN,
+    hm: a.hpMax || 100, bs: a.isBoss ? a.bossKind : null, sm: a.spdMul || 1,
     x: a.pos.x, y: a.pos.y, z: a.pos.z, vx: a.vel.x, vy: a.vel.y, vz: a.vel.z,
     og: a.onGround ? 1 : 0, cr: a.crouch ? 1 : 0, h: a.height, eh: a.eyeH, jc: a.jumpCD || 0,
     sl: a.slot, ls: a.lastSlot, ra: a.readyAt, sc: a.scoped, sr: a.scopeReady ? 1 : 0, st: a.scopeT, rs: a.reScope || 0,
@@ -67,6 +69,9 @@ export function packSelf(a) {
 }
 export function unpackSelf(a, s) {
   a.pt = s.pt; a.shotSeed = s.ss; a.shotN = s.sn;
+  a.hpMax = s.hm || 100;
+  a.spdMul = s.sm || 1;   // 真人附身 BOSS 时服务端的速度倍率，预测必须同步否则一路漂移
+  a.isBoss = !!s.bs; if (s.bs) a.bossKind = s.bs; else a.bossKind = null;
   a.pos.x = s.x; a.pos.y = s.y; a.pos.z = s.z; a.vel.x = s.vx; a.vel.y = s.vy; a.vel.z = s.vz;
   a.onGround = !!s.og; a.crouch = !!s.cr; a.height = s.h; a.eyeH = s.eh; a.jumpCD = s.jc;
   a.slot = s.sl; a.lastSlot = s.ls; a.readyAt = s.ra; a.scoped = s.sc; a.scopeReady = !!s.sr; a.scopeT = s.st; a.reScope = s.rs;

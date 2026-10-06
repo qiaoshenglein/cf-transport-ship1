@@ -32,6 +32,30 @@ export const WEAPONS = {
     recoil: { up: 0.0058, upMax: 0.06, side: 0.004, sideStart: 5, recover: 8 },
     sound: 'mp5', hudName: 'MP5',
   },
+  m249: {
+    id: 'm249', name: 'M249', slot: 0, type: 'lmg', auto: true,
+    dmg: 33, headMul: 4.0, limbMul: 0.8, rpm: 650, mag: 100, reserve: 200, reload: 5.6, draw: 1.15,
+    speed: 0.76, range: 220, falloff: 0.985, pen: 1.3, armorPen: 0.8,
+    spread: { base: 0.0042, move: 0.06, air: 0.2, crouch: 0.45, perShot: 0.0042, max: 0.055, recover: 6 },
+    recoil: { up: 0.0092, upMax: 0.13, side: 0.006, sideStart: 6, recover: 5.5 },
+    sound: 'm249', hudName: 'M249',
+  },
+  m3: {
+    id: 'm3', name: 'M3 霰弹枪', slot: 0, type: 'shotgun', auto: false, pellets: 8,
+    dmg: 15, headMul: 2.2, limbMul: 0.9, rpm: 90, mag: 6, reserve: 30, reload: 3.4, draw: 0.9,
+    speed: 0.9, range: 70, falloff: 0.9, pen: 0.7, armorPen: 0.6,
+    spread: { base: 0.085, move: 0.03, air: 0.1, crouch: 0.82, perShot: 0.012, max: 0.15, recover: 4 },
+    recoil: { up: 0.03, upMax: 0.05, side: 0.006, sideStart: 0, recover: 5 },
+    sound: 'm3', hudName: 'M3',
+  },
+  thompson: {
+    id: 'thompson', name: '汤姆逊', slot: 0, type: 'smg', auto: true,
+    dmg: 30, headMul: 3.6, limbMul: 0.85, rpm: 700, mag: 30, reserve: 150, reload: 2.4, draw: 0.62,
+    speed: 1.02, range: 120, falloff: 0.968, pen: 0.7, armorPen: 0.68,
+    spread: { base: 0.0035, move: 0.02, air: 0.12, crouch: 0.7, perShot: 0.006, max: 0.05, recover: 8.5 },
+    recoil: { up: 0.0068, upMax: 0.075, side: 0.005, sideStart: 4, recover: 7.5 },
+    sound: 'thompson', hudName: 'THOMPSON',
+  },
   deagle: {
     id: 'deagle', name: '沙漠之鹰', slot: 1, type: 'pistol', auto: false,
     dmg: 54, headMul: 3.8, limbMul: 0.75, rpm: 260, mag: 7, reserve: 35, reload: 2.0, draw: 0.55,
@@ -51,7 +75,7 @@ export const WEAPONS = {
   },
 };
 
-export const PRIMARIES = ['ak47', 'm4a1', 'awm', 'mp5'];
+export const PRIMARIES = ['ak47', 'm4a1', 'awm', 'mp5', 'm249', 'm3', 'thompson'];
 
 export class WeaponState {
   constructor(id) {

@@ -1,12 +1,14 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><title>NET</title>
 <script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/addons/"}}</script>
+<link rel="stylesheet" href="/src/style.css">
 </head>
 <body style="background:#0a0e12;color:#dfe4e8;font:13px monospace">
 <canvas id="c"></canvas><div id="ui"></div><pre id="out"></pre>
 <script type="module">
 import * as THREE from 'three';
 import { NetGame } from '/src/netplay.js';
+import { HUD } from '/src/hud.js';
 import { loadMap } from '/server/mapdata.js';
 
 const out = document.getElementById('out');
@@ -25,12 +27,13 @@ function stubGame() {
     renderer: { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(78, 1.6, 0.05, 400) },
     world,
     fx: { muzzle() {}, tracer() {}, impact() {}, explosion() {}, light() {}, bloodSplat() {}, shake: 0 },
-    vm: { equip() {}, setVisible() {}, fire() {}, melee() {}, reload() {}, throwNade() {}, inspect() {}, setTeam() {} },
-    hud: { toast() {}, slots() {}, update() {}, drawRadar() {}, scoreboard() {}, killFeed() {}, hitmarker() {}, damageFrom() {}, badge() {}, show() {}, el: { menu: { classList: { add() {}, remove() {}, toggle() {} } } } },
+    vm: { equip() {}, setVisible() {}, fire() {}, melee() {}, reload() {}, throwNade() {}, inspect() {}, setTeam() {}, setBossLook() {} },
+    hud: { toast() {}, slots() {}, update() {}, drawRadar() {}, scoreboard() {}, bossBar() {}, bossVeil() {}, killFeed() {}, hitmarker() {}, damageFrom() {}, badge() {}, show() {}, el: { menu: { classList: { add() {}, remove() {}, toggle() {} } } } },
     audio: { playUI() {} },
     aimTarget: null, dmgFlash: 0, killedBy: null,
     lock() {},
     addTag(a) { const sp = { visible: false, position: new THREE.Vector3() }; g.tags.push({ sprite: sp, actor: a }); },
+    removeTag(a) { g.tags = g.tags.filter((t) => t.actor !== a); },
     onJump() {}, onLand() {}, onFootstep() {}, onReloadStart() {}, onReloadDone() {}, onScope() {}, onDryFire() {}, onGrenadeStart() {}, onSwitch() {},
     toggleLoadout() {},
   };
@@ -40,13 +43,229 @@ function stubGame() {
 const drv = [];
 function drive(ng) {
   const iv = setInterval(() => {
-    if (!ng.me || !ng.inMatch) return;
+    if (!ng.inMatch) return;
     try { ng.update(1 / 30); } catch (e) { say('ERR update: ' + (e && e.stack || e)); F++; }
   }, 33);
   drv.push(iv);
 }
 
 try {
+  // ---------- 新武器枪械模型构造（纯几何，无需 WebGL） ----------
+  const { buildGun } = await import('/src/guns.js');
+  const { WEAPONS, PRIMARIES } = await import('/src/weapons.js');
+  for (const id of ['m249', 'm3', 'thompson']) {
+    let err = null, g = null;
+    try { g = buildGun(id); } catch (e) { err = e; }
+    const found = {};
+    if (g) g.traverse((o) => { if (!o.isMesh && o.name) found[o.name] = 1; });
+    ok(!err && found.muzzle && found.grip && !!WEAPONS[id] && PRIMARIES.includes(id), '新武器模型构建: ' + id, err ? String(err).slice(0, 90) : '');
+  }
+
+  // ---------- 角色模型构造（精细化几何 + 手臂 IK） ----------
+  const { Soldier } = await import('/src/character.js');
+  for (const team of ['BL', 'GR']) {
+    let err = null, vcount = 0;
+    try {
+      const so = new Soldier(team);
+      so.setWeapon('ak47');
+      const st = { speed: 3.2, fwd: 1, side: 0.3, crouch: false, pitch: 0.1, onGround: true, reloading: false, t: 1 };
+      for (let i = 0; i < 5; i++) so.update(0.016, st);
+      so.update(0.016, { ...st, crouch: true });
+      vcount = so.mesh.geometry.attributes.position.count;
+    } catch (e) { err = e; }
+    ok(!err && vcount > 400, '士兵模型构建: ' + team, err ? String(err).slice(0, 140) : ('verts=' + vcount));
+    // 命中盒 slab 重写正确性：躯干命中 / 脱靶 null
+    let hit = null, miss = null;
+    try {
+      const so2 = new Soldier(team); so2.setWeapon('ak47'); so2.update(0.016, { speed: 0, fwd: 1, crouch: false, pitch: 0, onGround: true });
+      so2.root.position.set(0, 0, 0); so2.mesh.updateMatrixWorld(true);
+      hit = so2.hitTest(new THREE.Vector3(0, 1.32, 5), new THREE.Vector3(0, 0, -1), 20, 900 + Math.random() * 1000);
+      miss = so2.hitTest(new THREE.Vector3(0.95, 1.32, 5), new THREE.Vector3(0, 0, -1), 20, 900 + Math.random() * 1000);
+    } catch (e) { err = e; }
+    ok(!!hit && ['chest', 'stomach', 'head', 'arm', 'leg'].includes(hit.part) && hit.t > 3 && hit.t < 5.2, '命中盒躯干命中: ' + team, hit ? JSON.stringify(hit) : 'null');
+    ok(!miss, '命中盒近身脱靶为 null: ' + team, miss ? JSON.stringify(miss) : '');
+  }
+
+  // ---------- PVE 计分板：怪物折叠 + 文案 ----------
+  try {
+    const gh = stubGame(); const hud = new HUD(gh);
+    gh.net = { room: { mode: 'pve', diff: 'normal' } };
+    const ent = (id, ex) => Object.assign({ id, name: 'P' + id, team: 'BL', alive: true, stats: { k: 1, d: 1, hs: 0 }, ping: 10 }, ex);
+    const mons = [];
+    for (let i = 0; i < 20; i++) mons.push(ent(900 + i, { team: 'GR', name: '丧尸' + i, isMonster: true, kind: 'infected', alive: i < 12 }));
+    hud.scoreboard(true, [ent(1, {}), ent(2, { isBot: true }), ...mons], 1, { BL: 5, GR: 2 });
+    const html = hud.el.boardBody.innerHTML, trs = (html.match(/<tr/g) || []).length;
+    ok(/🧟 怪物 ×20（存活 12）/.test(html) && trs <= 6, 'PVE 计分板把 20 只怪折叠成一行', `tr=${trs}`);
+    ok(/清怪小队/.test(html) && /怪潮/.test(html), 'PVE 计分板改用清怪小队 / 怪潮标题');
+    gh.net = null;
+    hud.scoreboard(true, [ent(1, {}), ent(2, { team: 'GR' })], 1, { BL: 1, GR: 0 });
+    ok(/潜伏者/.test(hud.el.boardBody.innerHTML) && !/🧟/.test(hud.el.boardBody.innerHTML), 'PVP 计分板文案保持原样');
+  } catch (e) { ok(false, 'PVE 计分板', String(e).slice(0, 160)); }
+
+  // ---------- PVE 表现层：补给站 / 空投 / BOSS 血条与事件 ----------
+  try {
+    const gh2 = stubGame(); const hud2 = new HUD(gh2);
+    const gp = stubGame(); gp.hud = hud2;
+    const P = new NetGame(gp);
+    P.room = { mode: 'pve', diff: 'normal' };
+    P.supMask = 0b111111; P.ensureProps();
+    ok(!!P.props && P.props.stations.length === 6 && hud2.bossEl.parentNode !== null, 'PVE 补给站按共享坐标建出 6 个模型');
+    P.applySup(0b101010);
+    ok(P.props.stations.filter((s) => s.ready).length === 3, '就绪位掩码驱动补给站发光');
+    P.applySup(0b111111);
+    P.syncCrates([[11, 2, 0.55, 3], [12, 4, 0.55, 6]]);
+    ok(P.props.crates.size === 2, 'BOSS 空投箱按清单生成');
+    P.syncCrates([[11, 2, 0.55, 3]]);
+    ok(P.props.crates.size === 1, '空投箱被取走后从场景移除');
+    P.onEvent({ e: 'bossin', id: 77, nm: '铁皮暴君', hp: 2400, hpMax: 2400 });
+    ok(P.boss && P.boss.id === 77 && P.boss.hpMax === 2400, 'bossin 事件建立 BOSS 血条数据');
+    hud2.bossBar(P.boss);
+    const bf1 = parseFloat(hud2.bossEl.querySelector('.bf').style.width) || 0;
+    ok(/铁皮暴君/.test(hud2.bossEl.textContent) && /2400/.test(hud2.bossEl.textContent) && Math.abs(bf1 - 100) < 0.6, 'BOSS 血条渲染名称与血量', `w=${bf1} txt=${hud2.bossEl.textContent}`);
+    P.onEvent({ e: 'hit', a: 1, v: 77, dmg: 30, part: 'chest', hp: 1200, ar: 0, ax: 0, az: 0, k: 0 });
+    P.refreshBossBar();
+    const bf2 = parseFloat(hud2.bossEl.querySelector('.bf').style.width) || 0;
+    ok(P.boss.hp === 1200 && Math.abs(bf2 - 50) < 0.6, 'hit 事件实时更新 BOSS 血条', `w=${bf2}`);
+    P.onEvent({ e: 'boss', a: 'blink', id: 77, o: [1, 0, 1], p: [8, 0, 4] });
+    P.onEvent({ e: 'boss', a: 'barrage', id: 77, nm: '铁皮暴君' });
+    P.onEvent({ e: 'blast', k: 'acid', p: [2, 0.9, 3], r: 4.6 });
+    P.onEvent({ e: 'sup', id: 1, i: 0, k: 'ammo', hp: 100, ar: 100 });
+    P.onEvent({ e: 'possess', id: 1, name: '张三', k: 'tyran', nm: '铁皮暴君', hpMax: 2400 });
+    ok(P.boss && P.boss.by === 1 && P.boss.who === '张三', 'possess 事件切到"玩家附身"血条');
+    P.onEvent({ e: 'bossdown', nm: '铁皮暴君', k: 'tyran', a: 1, p: [2, 0.55, 3] });
+    ok(P.boss === null, 'bossdown 事件清空血条数据');
+    P.dropProps();
+    ok(P.props === null, '离开 PVE 对局时销毁补给站与空投网格');
+    // 附身管线：名册行改自身阵营 + 血条，换装同步到本地预测
+    P.room = { mode: 'pve' }; P.myId = 1;
+    P.me = { id: 1, name: '我', team: 'BL', primary: 'ak47', shotSeed: 77, slot: 0, lastSlot: 1, inv: [], stats: { k: 0, d: 0, hs: 0, shots: 0, hits: 0 }, hp: 100, hpMax: 100, ping: 10 };
+    P.swapSelfLoadout('m249');
+    ok(P.me.primary === 'm249' && P.me.inv[0].id === 'm249' && P.me.slot === 0, '附身换装同步到本地预测武器');
+    P.syncRoster([{ id: 1, name: '我', team: 'GR', bot: 0, boss: 2, kind: 'tyran', bnm: '铁皮暴君', hp: 1500, hpMax: 2400, k: 0, d: 0, hs: 0, ping: 10, on: 1 }]);
+    ok(P.me.team === 'GR' && P.boss && P.boss.nm === '铁皮暴君' && P.boss.by === 1 && P.boss.who === '我', '名册 boss=2 行切换自身阵营与血条');
+    P.refreshBossBar();
+    ok(!hud2.bossEl.classList.contains('hidden') && /1500/.test(hud2.bossEl.textContent), '附身状态下自己的血量走 BOSS 血条');
+    P.swapSelfLoadout('ak47');
+    ok(P.me.inv[0].id === 'ak47', '下甲换回原武器');
+  } catch (e) { ok(false, 'PVE 表现层', String(e).slice(0, 180)); }
+
+  // ---------- BOSS / 怪物外观：与人类士兵显著区分 ----------
+  try {
+    const { LOOKS, bump, emitAmbient } = await import('/src/bosslook.js');
+    const { ViewModel } = await import('/src/viewmodel.js');
+    const gL = stubGame(); const hudL = new HUD(gL); gL.hud = hudL;
+    const L = new NetGame(gL); L.myId = 1;
+    L.room = { mode: 'pve', diff: 'normal' }; L.ensureLamp();
+    ok(!!L.lamp && L.lamp.isPointLight === true && L.lamp.intensity === 0, 'PVE 开局先备好一盏待命的 BOSS 灯');
+    L.me = { id: 1, name: '我', team: 'BL', primary: 'ak47', slot: 0, lastSlot: 1, inv: [], stats: { k: 0, d: 0, hs: 0, shots: 0, hits: 0 }, hp: 100, hpMax: 100, ping: 10 };
+    const row = (id, name, extra) => Object.assign({ id, name, team: 'GR', bot: 0, k: 0, d: 0, hs: 0, ping: 0, on: 1 }, extra);
+    L.syncRoster([
+      row(1, '我', { team: 'BL' }),
+      row(9001, '丧尸3', { kind: 'infected' }),
+      row(9002, '重装暴徒', { kind: 'heavy' }),
+      row(9003, '铁皮暴君', { kind: 'tyran', boss: 1, hp: 2400, hpMax: 2400 }),
+    ]);
+    const inf = L.remotes.get(9001), hv = L.remotes.get(9002), boss = L.remotes.get(9003);
+    ok(inf.soldier.lookKey === 'infected' && inf.soldier.mesh.scale.x !== 1 && inf.soldier.style.hunch > 0.3 && inf.soldier.style.lop < 1, '感染体：换体型 + 弓背跛行步态（人类没有）');
+    ok(hv.soldier.extras.length >= 3 && hv.soldier.material.color.getHex() === LOOKS.heavy.tint && hv.soldier.mesh.scale.x > 1.4, '重装暴徒：肩甲 + 锈色皮肤 + 加宽体型');
+    ok(boss.soldier.extras.length >= 8 && !!boss.soldier.aura && boss.soldier.hideGun === true && boss.soldier.hitMat === 'metal', '铁皮暴君：轮廓件 + 地面警示环 + 不扛枪');
+    boss.soldier.setWeapon('m249');
+    ok(boss.soldier.gun && boss.soldier.gun.visible === false, 'BOSS 的枪械网格隐藏（弹道锚点仍在）');
+    let aerr = null;
+    try { for (let i = 0; i < 4; i++) boss.soldier.update(0.016, { speed: 4, fwd: 1, crouch: false, pitch: 0.1, onGround: true }); } catch (e) { aerr = e; }
+    ok(!aerr && boss.soldier.breathT > 0.05, 'BOSS 带配件的动画可正常推进', aerr ? String(aerr).slice(0, 120) : '');
+    const auraAI = boss.soldier.aura.material.color.getHex();
+    // 真人附身：同一只 BOSS 换"驾驶员标记"
+    L.syncRoster([
+      row(1, '我', { team: 'BL' }),
+      row(9001, '丧尸3', { kind: 'infected' }),
+      row(9002, '重装暴徒', { kind: 'heavy' }),
+      row(9003, '张三', { kind: 'tyran', boss: 2, bnm: '铁皮暴君', hp: 1800, hpMax: 2400 }),
+    ]);
+    ok(boss.soldier.possessed === true && !!boss.soldier.crown && boss.soldier.aura.material.color.getHex() !== auraAI, '玩家附身的 BOSS：头顶旋核 + 光环换色，与 AI 版区分');
+    ok(gL.tags.some((t) => t.actor === boss), '附身后的 BOSS 仍带名牌（看得出谁在里面）');
+    // 轮廓件必须挂在对应骨骼附近，否则会飘在体外
+    const nearBones = (sol) => {
+      sol.root.position.set(0, 0, 0); sol.root.rotation.set(0, 0, 0);
+      sol.mesh.position.set(0, 0, 0); sol.mesh.updateMatrixWorld(true);
+      const bm = new THREE.Box3();
+      let bad = 0;
+      for (const m of sol.extras) {
+        if (!m.parent || !m.parent.isBone || !m.geometry) continue;
+        bm.setFromObject(m);
+        if (bm.isEmpty()) continue;
+        if (bm.getCenter(new THREE.Vector3()).distanceTo(m.parent.getWorldPosition(new THREE.Vector3())) > 1.0) bad++;
+      }
+      return bad;
+    };
+    const bossDrift = nearBones(boss.soldier), heavyDrift = nearBones(hv.soldier);
+    ok(bossDrift === 0, 'BOSS 轮廓件全部贴合骨骼（无飘件）', `drift=${bossDrift}`);
+    ok(heavyDrift === 0, '重装暴徒轮廓件贴合骨骼', `drift=${heavyDrift}`);
+    // 光效：本体光源 + 光晕 + 天光柱，大体型靠它们在全图定位
+    const R = boss.soldier.fxRefs;
+    ok(R && R.halo && R.beam && R.light, 'BOSS 自带光晕 / 天光柱 / 动态点光源');
+    ok(R.light.o.isPointLight === true && R.light.i > 20 && R.light.o.distance > 10, 'BOSS 点光源会照亮周围甲板', `i=${R.light && R.light.i}`);
+    boss.soldier.update(0.016, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    ok(R.light.o.intensity > 10 && R.beam.material.opacity > 0, '每帧驱动光强与光柱透明度', `li=${R.light && R.light.o.intensity.toFixed(1)}`);
+    bump(boss.soldier, 2); boss.soldier.update(0.016, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    const litUp = R.light.o.intensity;
+    boss.soldier.update(0.4, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    ok(R.pulse > 0.1 && R.pulse < 1 && R.light.o.intensity < litUp, '登场 / 起手脉冲顶亮光效后自然衰减', `p=${R.pulse.toFixed(2)}`);
+    // 一盏灯全场共用：BOSS 换人（AI -> 附身 / 附身 -> AI）时只换手，不新增光源
+    const lamp = R.light.o;
+    const b2 = L.ensureRemote(row(9102, '瘟疫母体', { kind: 'mother', boss: 1, hp: 100, hpMax: 100 }));
+    ok(b2.soldier.fxRefs.light.o === lamp, '第二只 BOSS 复用同一盏动态灯');
+    let lightN = 0; gL.renderer.scene.traverse((o) => { if (o.isLight) lightN++; });
+    ok(lightN === 1, '场景里始终只有这一盏动态灯', `n=${lightN}`);
+    L.dropRemote(9102);
+    ok(lamp.intensity === 0 && !lamp.parent, '持灯 BOSS 退场后灯归位、强度归零');
+    bump(boss.soldier, 1); boss.soldier.update(0.016, { speed: 0, fwd: 0, crouch: false, pitch: 0, onGround: true });
+    ok(lamp.intensity === 0 && lamp.parent === null, '让出灯的旧 BOSS 不会再驱动它');
+    let eN = 0;
+    const fakeFx = { add: { emit() { eN++; } }, smoke: { emit() { eN++; } } };
+    for (let i = 0; i < 40; i++) emitAmbient(boss.soldier, fakeFx, 0.033);
+    ok(eN >= 12, 'BOSS 持续冒出本体粒子（火星 / 酸滴 / 影雾）', `n=${eN}`);
+    const lowG = stubGame(); lowG.opts.quality = 'low';
+    const LN = new NetGame(lowG);
+    const lb = LN.ensureRemote(row(9101, '低画质BOSS', { kind: 'tyran', boss: 1, hp: 100, hpMax: 100 }));
+    ok(lb.soldier.fxRefs && !lb.soldier.fxRefs.light && !!lb.soldier.fxRefs.halo, '低画质只留自发光与光晕，不挂动态灯');
+    const bonesBefore = lb.soldier.B.chest.children.length;
+    LN.dropRemote(9101);
+    ok(!lb.soldier.fxRefs && !lb.soldier.aura && !lb.soldier.B.chest.children.some((o) => o.isLight), '卸装后光源与配件从骨骼上摘干净', `n=${bonesBefore}`);
+    // 尸体淡出 / 复活复位
+    boss.soldier.die(0, 1, false); boss.soldier.deadT = 5.0; boss.soldier.updateDeath(0.016);
+    const matsOf = (s) => s.extraMats.filter((m) => m.isMaterial);
+    ok(boss.soldier.material.opacity < 1 && matsOf(boss.soldier).every((m) => m.opacity <= m.userData.base + 1e-3), 'BOSS 配件与光环随尸体一起淡出');
+    boss.soldier.reset();
+    ok(matsOf(boss.soldier).every((m) => Math.abs(m.opacity - m.userData.base) < 1e-3) && boss.soldier.gun.visible === false, '复活后配件复位、枪械仍由骨臂替代');
+    // 交还控制权 / 怪物退场：外观必须完整还原成人类
+    L.syncRoster([row(1, '我', { team: 'BL' }), row(9002, '张三', { team: 'BL' })]);
+    ok(hv.soldier.lookKey === null && hv.soldier.extras === null && hv.soldier.mesh.scale.x === 1 && hv.soldier.material.color.getHex() === 0xffffff && hv.soldier.style === null, '卸装后完全恢复人类外观');
+    ok(L.remotes.get(9001) === undefined && L.remotes.get(9003) === undefined, '怪物与 BOSS 实体按名册移除');
+    // 第一人称：自己就是 BOSS 时手臂变异
+    const vm = new ViewModel(gL.renderer.scene, { flash: [null, null, null], flashSide: null }, 'BL');
+    vm.setBossLook('mother');
+    ok(vm.armK > 1.2 && vm.claws.every((c) => c.visible) && vm.sleeveMat.color.getHex() === LOOKS.mother.tint && vm.cuffMat.emissive.getHex() === LOOKS.mother.glow, '自己附身 BOSS：手臂变粗长骨爪、袖口发本体光');
+    vm.setTeam('BL');
+    ok(vm.sleeveMat.color.getHex() === LOOKS.mother.tint && vm.armK > 1.2, '阵营刷新不会洗掉 BOSS 形态');
+    vm.setBossLook(null);
+    ok(vm.armK === 1 && vm.claws.every((c) => !c.visible) && vm.sleeveMat.color.getHex() === 0x222326 && vm.cuffMat.emissive.getHex() === 0, '交还 BOSS 后第一人称回到人类手臂');
+    // 准星下的目标标注 + 屏幕染色（harness 直接加载 /src/style.css，校验真实样式契约）
+    hudL.el.nameTip.className = 'BOSS'; hudL.el.nameTip.textContent = '☠ 铁皮暴君';
+    const tipCol = getComputedStyle(hudL.el.nameTip).color;
+    ok(tipCol === 'rgb(255, 90, 60)', '准星下 BOSS 目标名用专属色', tipCol);
+    hudL.el.nameTip.className = 'MON';
+    ok(getComputedStyle(hudL.el.nameTip).color === 'rgb(140, 227, 106)', '准星下普通怪物名用另一个色', getComputedStyle(hudL.el.nameTip).color);
+    hudL.bossVeil('#ff5a1c');
+    ok(!hudL.veilEl.classList.contains('hidden') && /radial-gradient/.test(hudL.veilEl.style.background), '附身后屏幕边缘染上本体色');
+    ok(getComputedStyle(hudL.veilEl).pointerEvents === 'none', '屏幕染色层不挡住操作');
+    hudL.bossVeil(null);
+    ok(hudL.veilEl.classList.contains('hidden'), '脱离 BOSS 形态后屏幕染色消失');
+    let rerr = null;
+    try { hudL.drawRadar({ pos: new THREE.Vector3(), yaw: 0, team: 'BL' }, [hv], 1); } catch (e) { rerr = e; }
+    ok(!rerr, '雷达渲染怪物目标不抛错', rerr ? String(rerr).slice(0, 120) : '');
+  } catch (e) { ok(false, 'BOSS 外观', String(e).slice(0, 200)); }
+
   // ---------- 大厅 UI ----------
   const gA = stubGame(), gB = stubGame();
   const A = new NetGame(gA), B = new NetGame(gB);
@@ -54,6 +273,12 @@ try {
   ok(!!lobby.querySelector('#roomList') && !!lobby.querySelector('#netName'), '大厅 DOM 构建');
   A.renderRooms([{ id: '1', name: '演示房', n: 3, max: 8, bl: 1, gr: 2, goal: 50, state: 'play', timeLeft: 40 }]);
   ok(lobby.querySelector('#roomList').innerHTML.includes('演示房'), '房间列表渲染');
+  ok(!!lobby.querySelector('.seg[data-kg="mode"]') && !!lobby.querySelector('#pveOpt .seg[data-kg="diff"]'), '大厅含 PVE 模式与难度选择');
+  A.renderRooms([{ id: '2', name: '挑战房', n: 2, max: 8, bl: 2, gr: 0, goal: 50, state: 'play', timeLeft: 400, mode: 'pve', diff: 'hard', wave: 3, score: { BL: 21, GR: 2 } }]);
+  const pveRow = lobby.querySelector('#roomList').innerHTML;
+  ok(pveRow.includes('PVE 困难') && pveRow.includes('第 4 波') && !pveRow.includes('潜伏'), '房间列表标注 PVE 波次/难度');
+  A.renderRooms([{ id: '3', name: 'BOSS房', n: 2, max: 8, goal: 50, state: 'play', timeLeft: 300, mode: 'pve', diff: 'hell', wave: 7, score: { BL: 88, GR: 5 }, boss: { k: 'mother', nm: '瘟疫母体', hp: 1500, hpMax: 3000, by: 1, who: '老王' } }]);
+  ok(lobby.querySelector('#roomList').innerHTML.includes('⚠ 瘟疫母体') && lobby.querySelector('#roomList').innerHTML.includes('玩家附身'), '房间列表显示 BOSS 与"玩家附身"');
 
   // ---------- 连接 / 建房 / 加入 ----------
   await A.connect(); A.helloMsg(); await sleep(300);
@@ -69,6 +294,22 @@ try {
   ok(B.inMatch, 'B 快速匹配进入');
   for (let i = 0; i < 40 && !(A.remotes.size === 1 && B.remotes.size === 1); i++) await sleep(100);
   ok(A.remotes.size === 1 && B.remotes.size === 1, '互相看到对方角色');
+
+  // ---------- 机器人客户端标注 + 房主管理面板（即时清理，不影响后续计数断言） ----------
+  const bt = B.ensureRemote({ id: 7001, name: '测试AI', team: 'BL', bot: 1, ping: 0, k: 0, d: 0, hs: 0, prim: 'ak47' });
+  ok(bt && bt.isBot === true && !!bt.soldier, '客户端把 roster.bot 标注为远端士兵');
+  B.dropRemote(7001);
+  const mon = B.ensureRemote({ id: 7002, name: '丧尸7', team: 'GR', bot: 0, kind: 'infected', ping: 0, k: 0, d: 0, hs: 0, prim: 'deagle' });
+  ok(mon && mon.isMonster === true && mon.isBot === false && mon.kind === 'infected' && !!mon.soldier, '客户端把 roster.kind 标注为怪物（非机器人）');
+  B.dropRemote(7002);
+  try {
+    A.openBotPanel();
+    const bp = A._botPanel;
+    ok(!!bp && !bp.classList.contains('hidden') && !!bp.querySelector('.botAdd') && !!bp.querySelector('#botList'), '房主机器人管理面板可打开');
+    A.renderBotList();
+    A.closeBotPanel();
+    ok(A._botPanel.classList.contains('hidden') && !A.botUI, '面板可关闭且状态复位');
+  } catch (e) { ok(false, '机器人面板', String(e).slice(0, 120)); }
 
   // ---------- 移动预测 + 服务端和解 + 远端插值 ----------
   const aId = A.myId, bR = B.remotes.get(aId);
@@ -90,6 +331,29 @@ try {
   ok(A.me.inv[0].mag < mag0, '开火消耗弹匣', `${mag0}->${A.me.inv[0].mag}`);
   await sleep(500);
   ok(A.pending.length < 40, '射击后预测仍收敛', `pending=${A.pending.length}`);
+
+  // ---------- 和解软修正（预测扰动 -> 视觉偏移渐消，不硬跳） ----------
+  A.me.pos.x += 0.4;
+  await sleep(120);
+  ok(A.renderOff.length() > 0.04, '软修正偏移生效（renderOff）', `off=${A.renderOff.length().toFixed(3)}`);
+  await sleep(500);
+  ok(A.renderOff.length() < 0.05, '软修正偏移渐消归零', `off=${A.renderOff.length().toFixed(3)}`);
+
+  // ---------- 观战 ----------
+  const gC = stubGame(); const C = new NetGame(gC);
+  await C.connect(); try { sessionStorage.removeItem('cf_ticket'); } catch (e) {} C.helloMsg(); await sleep(200);
+  C.send({ t: 'spectate', rid: '1' });
+  for (let i = 0; i < 40 && !C.spectate; i++) await sleep(100);
+  drive(C);
+  ok(C.spectate && !C.me && C.remotes.size === 2, '观战连接并加载双方角色');
+  await sleep(900);
+  const tgt = C.remotes.get(C.specTarget);
+  ok(!!tgt && tgt.vPos && gC.renderer.camera.position.distanceTo(tgt.vPos) < 4, '观战相机跟随目标', tgt ? 'ok' : 'no target');
+  const prevT = C.specTarget; C.specCycle();
+  ok(C.specTarget !== prevT, 'V 键切换观战目标');
+  const hadB = C.remotes.size;
+  A.me.keys.add('KeyC'); await sleep(120); A.me.keys.delete('KeyC'); // 触发远端平滑路径变化
+  ok(C.remotes.size === hadB, '观战状态稳定');
 
   // ---------- 断线自动重连 ----------
   A.ws.close();
@@ -116,6 +380,7 @@ try {
     ok(!A.inMatch && B.remotes.size === 0, '离开后房间名册同步');
   }
 
+  C.leave();
   B.leave();
   drv.forEach(clearInterval);
 } catch (e) {

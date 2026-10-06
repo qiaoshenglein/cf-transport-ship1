@@ -21,6 +21,7 @@ NAME=cf-ship
 if [ -f "$CONF" ]; then set -a; . "$CONF"; set +a; fi
 export PORT="${PORT:-8080}" HOST="${HOST:-0.0.0.0}"
 [ -n "${MAX_ROOMS:-}" ] && export MAX_ROOMS
+[ -n "${MAX_IP_CONNS:-}" ] && export MAX_IP_CONNS
 [ -n "${DEV_SRC:-}" ] && export DEV_SRC
 
 # ---- 确保 node 存在（服务端依赖 node:http + ws，需 Node >= 18）

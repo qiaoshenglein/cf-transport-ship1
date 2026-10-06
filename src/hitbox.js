@@ -68,19 +68,25 @@ export function pointOn(M, bone, lx, ly, lz) {
 export const headPoint = (M) => pointOn(M, 'head', 0, 0.1, 0);
 export const chestPoint = (M) => pointOn(M, 'chest', 0, 0.1, 0);
 
-// 射线 vs 角色全部命中盒。o/d: [x,y,z]，d 已归一化。返回 {t, part} | null
-export function rayHitboxes(M, pose, o, d, maxT) {
+// 射线 vs 角色全部命中盒。o/d: [x,y,z]，d 已归一化。s: 以脚点为锚的整体放大倍率（巨型 BOSS）。返回 {t, part} | null
+export function rayHitboxes(M, pose, o, d, maxT, s = 1) {
+  // 放大身体 s 倍 = 把射线朝脚点收缩 1/s 再按人体测，命中参数乘回 s 得到真实距离
+  const k = s && s !== 1 ? 1 / s : 0;
+  const ox = k ? pose.x + (o[0] - pose.x) * k : o[0];
+  const oy = k ? pose.y + (o[1] - pose.y) * k : o[1];
+  const oz = k ? pose.z + (o[2] - pose.z) * k : o[2];
+  const lim = k ? maxT * k : maxT;
   // 粗检：到身体中心的距离
-  const wx = pose.x - o[0], wy = pose.y + 1.0 - o[1], wz = pose.z - o[2];
+  const wx = pose.x - ox, wy = pose.y + 1.0 - oy, wz = pose.z - oz;
   const tc = wx * d[0] + wy * d[1] + wz * d[2];
-  if (tc < -1.5 || tc > maxT + 1.5) return null;
+  if (tc < -1.5 || tc > lim + 1.5) return null;
   const px = wx - d[0] * tc, py = wy - d[1] * tc, pz = wz - d[2] * tc;
   if (px * px + py * py + pz * pz > 1.8) return null;
-  let best = maxT, part = null;
+  let best = lim, part = null;
   for (const [bone, cx, cy, cz, hx, hy, hz, name] of BOXES) {
     const m = M[bone];
     // 世界 -> 骨骼局部（旋转部分正交，逆 = 转置）
-    const rx = o[0] - m[3], ry = o[1] - m[7], rz = o[2] - m[11];
+    const rx = ox - m[3], ry = oy - m[7], rz = oz - m[11];
     const lox = m[0] * rx + m[4] * ry + m[8] * rz - cx, loy = m[1] * rx + m[5] * ry + m[9] * rz - cy, loz = m[2] * rx + m[6] * ry + m[10] * rz - cz;
     const ldx = m[0] * d[0] + m[4] * d[1] + m[8] * d[2], ldy = m[1] * d[0] + m[5] * d[1] + m[9] * d[2], ldz = m[2] * d[0] + m[6] * d[1] + m[10] * d[2];
     let tmin = 0, tmax = best, ok = true;
@@ -93,5 +99,5 @@ export function rayHitboxes(M, pose, o, d, maxT) {
     }
     if (ok && tmin < best) { best = tmin; part = name; }
   }
-  return part ? { t: best, part } : null;
+  return part ? { t: k ? best / k : best, part } : null;
 }

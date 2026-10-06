@@ -1,17 +1,21 @@
 // 第一人称武器与手臂
 import * as THREE from 'three';
 import { buildGun, gunMaterials } from './guns.js';
+import { LOOKS } from './bosslook.js';
 
 const HIP = {
   ak47: { p: [0.165, -0.175, -0.55], r: [0.045, 0.165, 0.02] },
   m4a1: { p: [0.16, -0.18, -0.54], r: [0.045, 0.165, 0.02] },
   awm: { p: [0.17, -0.185, -0.6], r: [0.04, 0.15, 0.02] },
   mp5: { p: [0.155, -0.165, -0.5], r: [0.05, 0.17, 0.02] },
+  m249: { p: [0.17, -0.185, -0.56], r: [0.045, 0.155, 0.02] },
+  m3: { p: [0.16, -0.175, -0.52], r: [0.05, 0.16, 0.02] },
+  thompson: { p: [0.155, -0.165, -0.48], r: [0.052, 0.17, 0.02] },
   deagle: { p: [0.085, -0.115, -0.4], r: [0.05, 0.1, 0] },
   knife: { p: [0.17, -0.15, -0.34], r: [0.35, -0.25, 0.55] },
   he: { p: [0.13, -0.12, -0.3], r: [0.1, -0.2, 0.2] },
 };
-const KICK = { ak47: [0.04, 0.07], m4a1: [0.032, 0.05], awm: [0.09, 0.2], mp5: [0.024, 0.035], deagle: [0.05, 0.22] };
+const KICK = { ak47: [0.04, 0.07], m4a1: [0.032, 0.05], awm: [0.09, 0.2], mp5: [0.024, 0.035], deagle: [0.05, 0.22], m249: [0.046, 0.062], m3: [0.085, 0.26], thompson: [0.03, 0.046] };
 
 const ease = (t) => t * t * (3 - 2 * t);
 const seg = (f, a, b) => Math.min(1, Math.max(0, (f - a) / (b - a)));
@@ -25,6 +29,7 @@ export class ViewModel {
     this.rig.add(this.holder);
     this.guns = {};
     this.cur = null; this.id = null;
+    this.armK = 1; this.claws = null; this.bossKind = null; this.clawMat = null;
     // 灯光（方向每帧同步到相机空间）
     this.sun = new THREE.DirectionalLight(0xffffff, 2.5);
     this.sun.position.set(0.5, 1, 0.3);
@@ -78,6 +83,8 @@ export class ViewModel {
       this.shells.push({ mesh: s, v: new THREE.Vector3(), w: new THREE.Vector3(), life: 0 });
     }
     this.shellIdx = 0;
+    // 手臂 IK 复用暂存，消除每帧/每只手 new
+    this._ik = { E: new THREE.Vector3(), dir: new THREE.Vector3(), back: new THREE.Vector3(), mid: new THREE.Vector3(), gp: new THREE.Vector3(), fp: new THREE.Vector3(), UP: new THREE.Vector3(0, 1, 0) };
     // 状态
     this.t = 0;
     this.kick = 0; this.kickV = 0; this.kickRot = 0; this.kickRotV = 0;
@@ -93,7 +100,52 @@ export class ViewModel {
   setTeam(team) {
     this.team = team;
     this.sleeveMat.color.set(team === 'GR' ? 0x3b4757 : 0x222326);
+    this.sleeveMat.roughness = 0.9; this.sleeveMat.metalness = 0;
     this.cuffMat.color.set(team === 'GR' ? 0x1f62c8 : 0xa81818);
+    this.cuffMat.emissive.setHex(0x000000); this.cuffMat.emissiveIntensity = 1;
+    if (this.bossKind) this.applyBossLook(this.bossKind);   // 换阵营不能把 BOSS 形态洗掉
+  }
+  // 玩家附身 BOSS 时的第一人称：袖口按种类发光、手臂变粗、指间长出骨爪
+  setBossLook(kind) {
+    this.bossKind = LOOKS[kind] ? kind : null;
+    this.gloveMat.color.setHex(this.bossKind ? 0x1a1a16 : 0x1b1b1d);
+    this.applyBossLook(this.bossKind);
+  }
+  applyBossLook(kind) {
+    const L = kind ? LOOKS[kind] : null;
+    if (!this.claws) this.buildClaws();
+    for (const c of this.claws) c.visible = !!L;
+    this.armK = L ? 1.32 : 1;
+    if (L) {
+      this.sleeveMat.color.setHex(L.tint);
+      this.sleeveMat.roughness = Math.max(0.35, L.rough - 0.3);
+      this.sleeveMat.metalness = Math.min(1, L.metal + 0.25);
+      this.cuffMat.color.setHex(L.glow);
+      this.cuffMat.emissive.setHex(L.glow);
+      this.cuffMat.emissiveIntensity = 1.5;
+      this.clawMat.color.setHex(L.tint).multiplyScalar(1.5);
+      this.flashFront.material.color.setHex(L.glow);
+    } else if (this.team) {
+      this.sleeveMat.roughness = 0.9; this.sleeveMat.metalness = 0;
+      this.cuffMat.emissive.setHex(0x000000); this.cuffMat.emissiveIntensity = 1;
+      this.flashFront.material.color.setHex(0xffd9a0);
+      this.setTeam(this.team);
+    }
+  }
+  buildClaws() {
+    this.clawMat = new THREE.MeshStandardMaterial({ color: 0xcfc4a8, roughness: 0.3, metalness: 0.2 });
+    this.claws = [];
+    const geo = new THREE.ConeGeometry(0.014, 0.12, 6);
+    for (const s of ['R', 'L']) {
+      const hand = this.arms[s].hand;
+      for (const [dx, len] of [[-0.028, 0.9], [0, 1.25], [0.028, 1]]) {
+        const c = new THREE.Mesh(geo, this.clawMat);
+        c.position.set(dx, -0.052, -0.056);
+        c.rotation.x = -1.9; c.scale.set(1, len, 1);
+        c.visible = false;
+        hand.add(c); this.claws.push(c);
+      }
+    }
   }
   equip(id, drawTime) {
     if (!this.guns[id]) {
@@ -122,7 +174,7 @@ export class ViewModel {
     this.flash.visible = true;
     this.flashFront.material.map = this.flashTex[(Math.random() * 3) | 0];
     this.flashFront.rotation.z = Math.random() * Math.PI;
-    const sc = this.id === 'awm' ? 1.6 : this.id === 'deagle' ? 1.2 : this.id === 'mp5' ? 0.8 : 1;
+    const sc = this.id === 'awm' ? 1.6 : this.id === 'm3' ? 1.7 : this.id === 'deagle' ? 1.2 : this.id === 'mp5' ? 0.8 : this.id === 'm249' ? 1.1 : 1;
     this.flash.scale.setScalar(sc * (0.8 + Math.random() * 0.45));
     if (this.id !== 'awm') this.ejectShell();
     else this.anim = { type: 'bolt', t: 0, dur: 1.3 };
@@ -238,8 +290,8 @@ export class ViewModel {
     this.holder.rotation.set(rx, ry, rz);
     this.holder.updateMatrixWorld(true);
     // 手臂 IK（简化：前臂从固定肘点指向手）
-    const gp = P.grip ? P.grip.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(px, py, pz);
-    const fp = P.fore ? P.fore.getWorldPosition(new THREE.Vector3()) : null;
+    const gp = P.grip ? P.grip.getWorldPosition(this._ik.gp) : this._ik.gp.set(px, py, pz);
+    const fp = P.fore ? P.fore.getWorldPosition(this._ik.fp) : null;
     this.placeArm('R', handROverride || gp, true);
     if (id === 'knife') this.arms.L.g.visible = false;
     else { this.arms.L.g.visible = true; this.placeArm('L', handL || fp || gp, false); }
@@ -265,21 +317,23 @@ export class ViewModel {
     this.fill.intensity = 0.35 * (st.indoor ? 0.5 : 1);
   }
   placeArm(s, handPos, right) {
-    const A = this.arms[s];
-    const E = this.elbow[s].clone();
+    const A = this.arms[s], K = this._ik;
+    const E = K.E.copy(this.elbow[s]);
     const hp = (HIP[this.id] || HIP.ak47).p;
     E.x += (this.holder.position.x - hp[0]) * 0.6; E.y += (this.holder.position.y - hp[1]) * 0.6; E.z += (this.holder.position.z - hp[2]) * 0.5;
     if (this.id === 'deagle' && s === 'L') E.set(0.0, -0.46, -0.3);
-    const dir = handPos.clone().sub(E);
+    const dir = K.dir.copy(handPos).sub(E);
     const L = dir.length(); dir.normalize();
-    const back = handPos.clone().addScaledVector(dir, -0.05);
-    const mid = E.clone().add(back).multiplyScalar(0.5);
+    const back = K.back.copy(handPos).addScaledVector(dir, -0.05);
+    const mid = K.mid.copy(E).add(back).multiplyScalar(0.5);
     A.fore.position.copy(mid);
-    A.fore.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    A.fore.scale.set(1, Math.max(0.2, (L - 0.05) / 0.39), 1);
+    A.fore.quaternion.setFromUnitVectors(K.UP, dir);
+    A.fore.scale.set(this.armK, Math.max(0.2, (L - 0.05) / 0.39), this.armK);
     A.cuff.position.copy(handPos).addScaledVector(dir, -0.075);
     A.cuff.quaternion.copy(A.fore.quaternion);
+    A.cuff.scale.setScalar(this.armK);
     A.hand.position.copy(handPos);
+    A.hand.scale.setScalar(this.armK);
     // 手掌朝向：沿前臂方向，右手握把稍向前倾
     A.hand.quaternion.copy(this.holder.quaternion);
     if (right) A.hand.rotateX(-0.35); else A.hand.rotateX(0.3);

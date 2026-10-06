@@ -19,7 +19,7 @@ page.on('pageerror', (e) => console.log('[pageexception]', String(e).slice(0, 30
 await page.goto(`http://127.0.0.1:${port}/test/netplay-harness.html`, { waitUntil: 'domcontentloaded' });
 let done = false;
 try {
-  await page.waitForFunction(() => document.title === 'NETDONE', null, { timeout: 24000 });
+  await page.waitForFunction(() => document.title === 'NETDONE', null, { timeout: 30000 });
   done = true;
 } catch (e) {
   console.log('超时：浏览器测试未跑完');

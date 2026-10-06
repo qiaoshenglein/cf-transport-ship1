@@ -1,5 +1,5 @@
 // 联机协议（客户端与服务端共用）
-export const PROTO_VERSION = 1;
+export const PROTO_VERSION = 2;
 export const TICK_RATE = 30;          // 服务端模拟 / 快照频率
 export const INTERP_DELAY = 0.1;      // 客户端远端角色插值延迟（秒）
 export const MAX_REWIND = 0.35;       // 延迟补偿最大回溯（秒）
@@ -41,3 +41,80 @@ export function sanitizeCmd(c) {
 
 export const round2 = (v) => Math.round(v * 100) / 100;
 export const round3 = (v) => Math.round(v * 1000) / 1000;
+
+// ================= 二进制世界快照编解码（服务端编码、客户端解码共用同一份，杜绝实现漂移） =================
+// 世界快照 ps 每项: [id, x, y, z, yaw, pitch, flags, weaponId, vx, vz]；nd 每项: [id, x, y, z]
+// 布局(小端): [0]u8 magic 0xC5 [1]u8 ver [2]u32 tick [6]f32 st [10]u16 tl*10 [12]u8 gs(0play/1end)
+//             [13]u16 scBL [15]u16 scGR [17]u8 pc [18]u8 nc [20..] 玩家记录(18B) [.. ] 手雷记录(8B)
+const W_MAGIC = 0xC5, W_VER = 2, W_HEAD = 20, P_STRIDE = 18, N_STRIDE = 8;
+const W_POS = 256, W_ANG = 10000, W_VEL = 24, W_TL = 10;   // 量化比例：位置~3.9mm，角度~0.006°，速度~4cm/s
+export const WTABLE = ['ak47', 'm4a1', 'awm', 'mp5', 'deagle', 'knife', 'he', 'm249', 'm3', 'thompson'];
+const clamp16 = (v) => v < -32768 ? -32768 : v > 32767 ? 32767 : v | 0;
+const wrapPi = (a) => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+const dvOf = (d) => (d instanceof ArrayBuffer ? new DataView(d) : ArrayBuffer.isView(d) ? new DataView(d.buffer, d.byteOffset, d.byteLength) : null);
+
+export function encodeWorld(w) {
+  const ps = w.ps || [], nd = w.nd || [];
+  const buf = new ArrayBuffer(W_HEAD + ps.length * P_STRIDE + nd.length * N_STRIDE);
+  const dv = new DataView(buf);
+  const sc = w.sc || { BL: 0, GR: 0 };
+  dv.setUint8(0, W_MAGIC); dv.setUint8(1, W_VER);
+  dv.setUint32(2, w.tick >>> 0, true);
+  dv.setFloat32(6, w.st, true);
+  dv.setUint16(10, Math.max(0, Math.min(65535, Math.round((w.tl || 0) * W_TL))), true);
+  dv.setUint8(12, w.gs === 'end' ? 1 : 0);
+  dv.setUint16(13, Math.min(65535, sc.BL | 0), true);
+  dv.setUint16(15, Math.min(65535, sc.GR | 0), true);
+  dv.setUint8(17, ps.length); dv.setUint8(18, nd.length);
+  let o = W_HEAD;
+  for (const p of ps) {
+    dv.setUint16(o, p[0] & 0xffff, true);
+    dv.setInt16(o + 2, clamp16(p[1] * W_POS), true);
+    dv.setInt16(o + 4, clamp16(p[2] * W_POS), true);
+    dv.setInt16(o + 6, clamp16(p[3] * W_POS), true);
+    dv.setInt16(o + 8, clamp16(wrapPi(p[4]) * W_ANG), true);
+    dv.setInt16(o + 10, clamp16(p[5] * W_ANG), true);
+    dv.setUint8(o + 12, p[6] & 0xff);
+    const wi = WTABLE.indexOf(p[7]); dv.setUint8(o + 13, wi < 0 ? 5 : wi);
+    dv.setInt16(o + 14, clamp16(p[8] * W_VEL), true);
+    dv.setInt16(o + 16, clamp16(p[9] * W_VEL), true);
+    o += P_STRIDE;
+  }
+  for (const n of nd) {
+    dv.setUint16(o, n[0] & 0xffff, true);
+    dv.setInt16(o + 2, clamp16(n[1] * W_POS), true);
+    dv.setInt16(o + 4, clamp16(n[2] * W_POS), true);
+    dv.setInt16(o + 6, clamp16(n[3] * W_POS), true);
+    o += N_STRIDE;
+  }
+  return buf;
+}
+
+export function decodeWorld(data) {
+  const dv = dvOf(data);
+  if (!dv || dv.byteLength < W_HEAD) return null;
+  if (dv.getUint8(0) !== W_MAGIC || dv.getUint8(1) !== W_VER) return null;
+  const tick = dv.getUint32(2, true);
+  const st = dv.getFloat32(6, true);
+  const tl = dv.getUint16(10, true) / W_TL;
+  const gs = dv.getUint8(12) ? 'end' : 'play';
+  const sc = { BL: dv.getUint16(13, true), GR: dv.getUint16(15, true) };
+  const pc = dv.getUint8(17), nc = dv.getUint8(18);
+  if (dv.byteLength < W_HEAD + pc * P_STRIDE + nc * N_STRIDE) return null;
+  const ps = [];
+  let o = W_HEAD;
+  for (let i = 0; i < pc; i++, o += P_STRIDE) {
+    ps.push([
+      dv.getUint16(o, true),
+      dv.getInt16(o + 2, true) / W_POS, dv.getInt16(o + 4, true) / W_POS, dv.getInt16(o + 6, true) / W_POS,
+      dv.getInt16(o + 8, true) / W_ANG, dv.getInt16(o + 10, true) / W_ANG,
+      dv.getUint8(o + 12), WTABLE[dv.getUint8(o + 13)] || 'knife',
+      dv.getInt16(o + 14, true) / W_VEL, dv.getInt16(o + 16, true) / W_VEL,
+    ]);
+  }
+  const nd = [];
+  for (let i = 0; i < nc; i++, o += N_STRIDE) {
+    nd.push([dv.getUint16(o, true), dv.getInt16(o + 2, true) / W_POS, dv.getInt16(o + 4, true) / W_POS, dv.getInt16(o + 6, true) / W_POS]);
+  }
+  return { tick, st, tl, gs, sc, ps, nd };
+}

@@ -98,6 +98,8 @@ body.lk #clinks{opacity:.22}
 #protect{position:absolute;left:50%;bottom:22%;transform:translateX(-50%);color:#8fd0ff;font-size:14px;letter-spacing:2px;text-shadow:0 1px 2px #000}
 #nameTip{position:absolute;left:50%;top:calc(50% + 26px);transform:translateX(-50%);font-size:14px;font-weight:700;text-shadow:0 1px 2px #000}
 #nameTip.BL{color:var(--bl2)} #nameTip.GR{color:var(--gr2)}
+#nameTip.MON{color:#8ce36a} #nameTip.BOSS{color:#ff5a3c;font-size:16px;letter-spacing:1px}
+#bossVeil{position:absolute;inset:0;pointer-events:none;z-index:3;mix-blend-mode:screen}
 
 #scope{position:absolute;inset:0;display:none}
 #scope.on{display:block}
@@ -195,9 +197,16 @@ body.lk #clinks{opacity:.22}
 #lobby .roomRow b{color:#dfe4e8;font-weight:600;white-space:nowrap}
 #lobby .roomRow .rm{flex:1;color:#8b96a0;font-size:12.5px}
 #lobby .roomRow .rm i{font-style:normal;color:var(--accent);font-family:var(--num)}
+#lobby .roomRow .pvetag{font-style:normal;color:#ff8f6e;border:1px solid rgba(255,110,80,.45);background:rgba(255,90,60,.12);border-radius:5px;padding:1px 6px;margin-right:2px}
 #lobby .jin{padding:5px 18px;border-radius:6px;border:1px solid rgba(245,179,33,.5);background:rgba(245,179,33,.12);color:var(--accent);cursor:pointer;font-size:13px;font-family:var(--cn)}
 #lobby .jin:hover{background:rgba(245,179,33,.28)}
 #lobby .netinp input{width:100%;padding:7px 10px;border-radius:6px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.35);color:#fff;font-size:14px;font-family:var(--cn);outline:none}
 #lobby .seg{display:flex;gap:6px}
 #netBanner{position:absolute;top:12%;left:50%;transform:translateX(-50%);padding:10px 28px;border-radius:10px;background:var(--panel2);border:1px solid rgba(255,90,60,.55);color:#ffb0a0;font-size:15px;pointer-events:none;opacity:0;transition:opacity .35s;z-index:5}
+#bossBar{position:absolute;top:54px;left:50%;transform:translateX(-50%);width:min(460px,72vw);z-index:4;pointer-events:none;text-align:center;text-shadow:0 2px 6px rgba(0,0,0,.85)}
+#bossBar .bn{font-size:13px;letter-spacing:1px;color:#ffd0c2;font-family:var(--cn);margin-bottom:3px}
+#bossBar .bt{height:9px;border-radius:5px;background:rgba(0,0,0,.55);border:1px solid rgba(255,90,60,.6);overflow:hidden}
+#bossBar .bf{height:100%;width:100%;background:linear-gradient(90deg,#ff5a3c,#ffb03a);transition:width .18s linear}
 #netBanner.on{opacity:1}
+#lobby .spectbtn{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:#aeb8c2}
+#lobby .spectbtn:hover{background:rgba(255,255,255,.16)}

@@ -28,8 +28,9 @@ function createRoom(o) {
   if (rooms.size >= MAX_ROOMS) return null;
   const room = new Room(String(roomSeq++), {
     name: cleanName(o.name) || '房间',
-    goal: o.goal, max: o.max,
+    goal: o.goal, max: o.max, mode: o.mode, diff: o.diff,
     onEmpty: (r) => { rooms.delete(r.id); log(`房间 ${r.id} 已回收`); },
+    onCheat: (p, kind) => { log(`房间 ${room.id} 疑似作弊 ${kind}：${p.name}(#${p.id})，已暂停其开火 4 秒`); },
   });
   rooms.set(room.id, room);
   log(`房间 ${room.id} 创建：${room.name}（目标 ${room.goal} / 上限 ${room.max}）`);
@@ -43,6 +44,7 @@ class Sess {
     this.ws = ws; this.conn = ws; this.ip = ip;
     this.name = '士兵';
     this.room = null; this.player = null; this.ticket = null;
+    this.spect = null; this.spectRoom = null;
     this.msgs = 0; this.msgWin = Date.now();
   }
   send(o) {
@@ -50,6 +52,12 @@ class Sess {
     if (!ws || ws.readyState !== 1) return;
     if (ws.bufferedAmount > 4e6) return; // 拥塞时丢快照，TCP 自行恢复
     ws.send(JSON.stringify(o));
+  }
+  sendBin(buf) {
+    const ws = this.conn;
+    if (!ws || ws.readyState !== 1) return;
+    if (ws.bufferedAmount > 4e6) return;
+    ws.send(buf); // ws 原生支持 ArrayBuffer / TypedArray
   }
   err(m) { this.send({ t: 'err', m }); }
   attach(room, p) {
@@ -63,6 +71,12 @@ class Sess {
     if (!p) return false;
     this.attach(room, p);
     return true;
+  }
+  dropSpect() {
+    if (!this.spect || !this.spectRoom) { this.spect = null; this.spectRoom = null; return; }
+    const { room, sp } = { room: this.spectRoom, sp: this.spect };
+    this.spect = null; this.spectRoom = null;
+    room.removeSpectator(sp);
   }
   dropSeat(reason) {
     if (!this.player || !this.room) return;
@@ -129,23 +143,66 @@ const handlers = {
   },
   quick(s, m) {
     if (s.room) return s.err('已在房间中');
+    const want = m && m.mode === 'pve' ? 'pve' : 'pvp'; // 匹配不跨模式，避免 PVE 玩家被丢进对抗日
     let best = null;
     for (const r of rooms.values()) {
-      if (r.players.size >= r.max) continue;
+      if (r.mode !== want || r.players.size >= r.max) continue;
       if (!best || r.players.size > best.players.size) best = r; // 优先凑人
     }
-    if (!best) best = createRoom({ name: '快速匹配', goal: (m && m.goal) || 50, max: (m && m.max) || 16 });
+    if (!best) best = createRoom({ name: want === 'pve' ? '僵尸挑战' : '快速匹配', goal: (m && m.goal) || 50, max: (m && m.max) || 16, mode: want, diff: m && m.diff });
     if (!best || !s.join(best, { primary: m && m.primary, team: m && m.team })) return s.err('无法加入房间');
     s.send({ t: 'joined', ticket: s.ticket, ...best.welcome(s.player) });
     log(`${s.name} 快速匹配进入房间 ${best.id}`);
   },
+  spectate(s, m) {
+    if (s.room || s.spect) return s.err('已在房间中');
+    const room = rooms.get(String(m && m.rid));
+    if (!room) return s.err('房间不存在或已关闭');
+    const sp = room.addSpectator(s);
+    if (!sp) return s.err('观战席位已满');
+    s.spect = sp; s.spectRoom = room;
+    s.send({ t: 'spectating', ...room.spectWelcome() });
+    log(`${s.name} 进入房间 ${room.id} 观战`);
+  },
   cmd(s, m) { if (s.player && s.player.online && Array.isArray(m.list)) s.room.pushCmds(s.player, m.list); },
   loadout(s, m) { if (s.player) s.room.setLoadout(s.player, String(m.primary || '')); },
+  // PVE 附身 BOSS：任何存活真人可接管当前 AI BOSS，也可随时下甲交还 AI
+  boss(s, m) {
+    if (!s.room || !s.player) return s.err('需先进入房间');
+    if (s.room.mode !== 'pve') return s.err('只有 PVE 房间可以附身 BOSS');
+    const a = String((m && m.a) || '');
+    if (a === 'take') {
+      if (!s.room.takeBoss(s.player)) return s.err('当前没有可附身的 BOSS（等它登场，或你已处于 BOSS 形态）');
+      log(`${s.name} 附身 BOSS（房间 ${s.room.id}）`);
+    } else if (a === 'release') {
+      if (!s.room.releaseBoss(s.player, false)) return s.err('你当前不是 BOSS');
+      log(`${s.name} 交出 BOSS 控制权（房间 ${s.room.id}）`);
+    } else return s.err('未知的 BOSS 操作');
+  },
+  bot(s, m) {
+    if (!s.room || !s.player) return s.err('需先进入房间');
+    if (s.room.ownerId !== s.player.id) return s.err('只有房主可以管理机器人');
+    const a = String((m && m.a) || '');
+    if (a === 'add') {
+      const b = s.room.addBot({ team: m.team, primary: m.primary ? String(m.primary) : undefined, diff: m.diff ? String(m.diff) : 'normal' });
+      if (!b) return s.err('无法添加机器人（房间已满或已达机器人上限）');
+      log(`房间 ${s.room.id} 房主 ${s.name} 添加机器人 ${b.name}（${b.team}）`);
+    } else if (a === 'remove') {
+      if (!s.room.removeBot(m.id)) return s.err('机器人不存在');
+    } else if (a === 'clear') {
+      const team = m.team === 'BL' || m.team === 'GR' ? m.team : null;
+      const n = s.room.clearBots(team);
+      log(`房间 ${s.room.id} 房主 ${s.name} 清空机器人 ${team || '全部'}（${n} 个）`);
+    } else if (a === 'diff') {
+      s.room.setBotDiff(m.id, String(m.diff || 'normal'));
+    } else return s.err('未知的机器人操作');
+  },
   ping(s, m) {
     if (s.player && typeof m.r === 'number' && Number.isFinite(m.r)) s.player.ping = Math.max(0, Math.min(999, Math.round(m.r)));
     s.send({ t: 'pong', c: m && m.c, st: s.room ? s.room.time : 0 });
   },
   leave(s) {
+    s.dropSpect();
     if (s.room) log(`${s.name} 离开房间 ${s.room.id}`);
     s.dropSeat('leave'); s.send({ t: 'hi', rooms: roomList() });
   },
@@ -171,10 +228,11 @@ const server = http.createServer((req, res) => {
       : u.startsWith('/addons/')
         ? path.join(ROOT, 'node_modules', 'three', 'examples', 'jsm', u.slice('/addons/'.length))
         : path.normalize(path.join(ROOT, u));
-    if (!fp.startsWith(ROOT) || !/\.(js|html|json)$/.test(fp)) { res.writeHead(403); return res.end('forbidden'); }
+    if (!fp.startsWith(ROOT) || !/\.(js|html|json|css)$/.test(fp)) { res.writeHead(403); return res.end('forbidden'); }
     fs.readFile(fp, (e, buf) => {
       if (e) { res.writeHead(404); return res.end('not found'); }
-      res.writeHead(200, { 'content-type': (fp.endsWith('.html') ? 'text/html' : 'text/javascript') + '; charset=utf-8', 'cache-control': 'no-store' });
+      const ct = fp.endsWith('.html') ? 'text/html' : fp.endsWith('.css') ? 'text/css' : 'text/javascript';
+      res.writeHead(200, { 'content-type': ct + '; charset=utf-8', 'cache-control': 'no-store' });
       res.end(buf);
     });
     return;
@@ -190,8 +248,15 @@ const server = http.createServer((req, res) => {
 
 // ---------------- WebSocket ----------------
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 64 * 1024 });
+const ipConns = new Map(); // ip -> 活跃连接数
+const MAX_IP_CONNS = +(process.env.MAX_IP_CONNS || 8);
 wss.on('connection', (ws, req) => {
   const ip = (req.socket.remoteAddress || '?').replace(/^::ffff:/, '');
+  const c = (ipConns.get(ip) || 0) + 1;
+  if (c > MAX_IP_CONNS) { log(`IP ${ip} 连接数超限(${c})，拒绝`); try { ws.close(1013, 'ip-limit'); } catch (e) { /* 忽略 */ } return; }
+  ipConns.set(ip, c);
+  let counted = true;
+  const release = () => { if (!counted) return; counted = false; const n = (ipConns.get(ip) || 1) - 1; if (n <= 0) ipConns.delete(ip); else ipConns.set(ip, n); };
   const s = new Sess(ws, ip);
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
@@ -207,14 +272,16 @@ wss.on('connection', (ws, req) => {
     if (h) { try { h(s, m); } catch (e) { console.error('消息处理失败', m.t, e); s.err('服务器内部错误'); } }
   });
   ws.on('close', () => {
+    release();
     s.conn = null;
+    if (s.spect) { s.dropSpect(); return; }
     if (s.player && s.player.sess === s && s.room) {
       const room = s.room;
       s.room.disconnect(s.player);
       log(`${s.name} 断线（房间 ${room.id}，席位保留 ${RECONNECT_GRACE} 秒）`);
     }
   });
-  ws.on('error', () => { s.conn = null; });
+  ws.on('error', () => { release(); s.conn = null; });
 });
 
 // 心跳：20 秒无 pong 判定死亡并断开（触发席位保留流程）

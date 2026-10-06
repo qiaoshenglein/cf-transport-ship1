@@ -155,6 +155,15 @@ export class Effects {
       for (let i = 0; i < 6; i++) this.smoke.emit({ x: p.x, y: p.y, z: p.z, vx: dir.x * 3 + (Math.random() - 0.5) * 2, vy: Math.random() * 2, vz: dir.z * 3 + (Math.random() - 0.5) * 2, life: 0, max: 0.6, s0: 0.035, s1: 0.03, r: 0.35, g: 0.0, b: 0.0, a0: 1, a1: 0.6, grav: 9, drag: 0.5, floor: 0.01 });
       return;
     }
+    if (mat === 'acid') {
+      // 打中瘟疫母体：溅的是发光的酸液，不是血
+      for (let i = 0; i < 12; i++) {
+        const sp = 2.5 + Math.random() * 4.5;
+        this.add.emit({ x: p.x, y: p.y, z: p.z, vx: (nx + (Math.random() - 0.5) * 1.6) * sp, vy: (ny + Math.random() * 1.1) * sp, vz: (nz + (Math.random() - 0.5) * 1.6) * sp, life: 0, max: 0.3 + Math.random() * 0.3, s0: 0.05, s1: 0.02, r: 0.55, g: 1.7, b: 0.35, a0: 1, a1: 0.4, grav: 8, drag: 1.2 });
+      }
+      for (let i = 0; i < 5; i++) this.smoke.emit({ x: p.x, y: p.y, z: p.z, vx: (Math.random() - 0.5) * 1.4, vy: 0.3 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 1.4, life: 0, max: 0.7, s0: 0.1, s1: 0.5, r: 0.3, g: 0.8, b: 0.2, a0: 0.5, a1: 0, grav: -0.4, drag: 2.5 });
+      return;
+    }
     if (mat === 'metal') {
       const cnt = 6 + (Math.random() * 6) | 0;
       for (let i = 0; i < cnt; i++) {
@@ -217,27 +226,35 @@ export class Effects {
     const sc = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
     this.add.mat.uniforms.scale.value = sc; this.smoke.mat.uniforms.scale.value = sc;
     // 曳光
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), sv = new THREE.Vector3(), pv = new THREE.Vector3();
+    // 曳光：原地压缩 + 复用 scratch，消除每帧 filter 新数组与逐弹丸 new Vector3/Matrix4
+    const S = this._tc || (this._tc = {
+      m: new THREE.Matrix4(), q: new THREE.Quaternion(), sv: new THREE.Vector3(), pv: new THREE.Vector3(),
+      toCam: new THREE.Vector3(), up: new THREE.Vector3(), nrm: new THREE.Vector3(), basis: new THREE.Matrix4(),
+    });
+    const { m, q, sv, pv, toCam, up, nrm, basis } = S;
     const camPos = camera.position;
-    let n = 0;
     const speed = 380;
-    this.tracers = this.tracers.filter((tr) => {
+    const trs = this.tracers;
+    let w = 0, instN = 0;
+    for (let n = 0; n < trs.length; n++) {
+      const tr = trs[n];
       tr.t += dt;
       const head = Math.min(tr.len, tr.t * speed), tail = Math.max(0, head - 7);
-      if (tail >= tr.len) return false;
+      if (tail >= tr.len) continue;
+      trs[w++] = tr;
       const mid = pv.copy(tr.from).addScaledVector(tr.dir, (head + tail) / 2);
-      const toCam = camPos.clone().sub(mid).normalize();
-      const up = new THREE.Vector3().crossVectors(tr.dir, toCam).normalize();
-      const nrm = new THREE.Vector3().crossVectors(tr.dir, up);
-      const basis = new THREE.Matrix4().makeBasis(tr.dir, up, nrm);
+      toCam.copy(camPos).sub(mid).normalize();
+      up.crossVectors(tr.dir, toCam).normalize();
+      nrm.crossVectors(tr.dir, up);
+      basis.makeBasis(tr.dir, up, nrm);
       q.setFromRotationMatrix(basis);
       const dist = mid.distanceTo(camPos);
       sv.set(head - tail, 0.018 + dist * 0.0012, 1);
       m.compose(mid, q, sv);
-      if (n < this.tracerMax) this.tracerMesh.setMatrixAt(n++, m);
-      return true;
-    });
-    this.tracerMesh.count = n; this.tracerMesh.instanceMatrix.needsUpdate = true;
+      if (instN < this.tracerMax) this.tracerMesh.setMatrixAt(instN++, m);
+    }
+    trs.length = w;
+    this.tracerMesh.count = instN; this.tracerMesh.instanceMatrix.needsUpdate = true;
     for (const F of this.flashes) if (F.t > 0) { F.t -= dt; if (F.t <= 0) F.s.visible = false; }
     for (const L of this.lights) { if (L.t > 0) { L.t -= dt; L.l.intensity = Math.max(0, L.t / L.dur) * L.peak; } else L.l.intensity = 0; }
     this.shake *= Math.exp(-dt * 5);

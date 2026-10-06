@@ -59,12 +59,13 @@ export class Renderer {
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.shadowMap.autoUpdate = false; // 由主循环隔帧触发 needsUpdate，太阳静止、仅士兵移动，隔帧滞后可忽略
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(78, 16 / 9, 0.05, 60000);
     this.vmScene = new THREE.Scene();
     this.vmCamera = new THREE.PerspectiveCamera(58, 16 / 9, 0.01, 50);
     const size = r.getDrawingBufferSize(new THREE.Vector2());
-    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: quality === 'low' ? 0 : 4 });
+    const rt = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: quality === 'low' ? 0 : quality === 'medium' ? 2 : 4 });
     this.composer = new EffectComposer(r, rt);
     this.worldPass = new RenderPass(this.scene, this.camera);
     this.vmPass = new RenderPass(this.vmScene, this.vmCamera);

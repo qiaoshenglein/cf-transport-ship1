@@ -69,6 +69,36 @@ const GUNS = {
     mech: { f: 3800, g: 0.08, delay: 0.03 },
     echo: null,
   },
+  m249: {
+    gain: 1.15, drive: 2.4, wet: 0.14,
+    crack: { hp: 2000, dur: 0.003, g: 0.6 },
+    body: { f0: 3600, f1: 520, dur: 0.17, g: 0.95 },
+    mid: { f: 900, q: 1.0, dur: 0.1, g: 0.55 },
+    punch: { f0: 140, f1: 38, sw: 0.08, dur: 0.2, g: 0.9 },
+    tail: { f: 780, dur: 0.62, g: 0.32 },
+    mech: { f: 2600, g: 0.1, delay: 0.05 },
+    echo: [[0.18, 0.13]],
+  },
+  m3: {
+    gain: 1.2, drive: 2.7, wet: 0.22,
+    crack: { hp: 1400, dur: 0.005, g: 0.85 },
+    body: { f0: 2600, f1: 300, dur: 0.24, g: 1.0 },
+    mid: { f: 620, q: 0.7, dur: 0.14, g: 0.7 },
+    punch: { f0: 120, f1: 30, sw: 0.11, dur: 0.3, g: 1.05 },
+    tail: { f: 560, dur: 0.9, g: 0.4 },
+    mech: { f: 1900, g: 0.12, delay: 0.06 },
+    echo: [[0.2, 0.22], [0.5, 0.1]],
+  },
+  thompson: {
+    gain: 1.4, drive: 2.0, wet: 0.13,
+    crack: { hp: 3000, dur: 0.002, g: 0.5 },
+    body: { f0: 4200, f1: 780, dur: 0.095, g: 0.82 },
+    mid: { f: 980, q: 1.0, dur: 0.06, g: 0.55 },
+    punch: { f0: 170, f1: 58, sw: 0.045, dur: 0.11, g: 0.62 },
+    tail: { f: 1000, dur: 0.34, g: 0.2 },
+    mech: { f: 3200, g: 0.09, delay: 0.034 },
+    echo: [[0.15, 0.08]],
+  },
   deagle: {
     gain: 1.05, drive: 2.9, wet: 0.2,
     crack: { hp: 2600, dur: 0.003, g: 0.7 },
@@ -82,7 +112,7 @@ const GUNS = {
 };
 
 // 换弹/切枪的"重量感"：数值越小音高越低越沉
-const WEIGHT = { ak47: 0.85, m4a1: 1, awm: 0.8, mp5: 1.12, deagle: 1.05, knife: 1.2, grenade: 1.1 };
+const WEIGHT = { ak47: 0.85, m4a1: 1, awm: 0.8, mp5: 1.12, deagle: 1.05, knife: 1.2, grenade: 1.1, m249: 0.7, m3: 0.78, thompson: 0.95 };
 
 // ---------------------------------------------------------------------------
 // 预生成缓存（按采样率）：白/粉/褐噪声 + 混响 IR

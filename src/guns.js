@@ -196,6 +196,70 @@ const builders = {
     anchor(g, 'magwell', 0, -0.02, -0.13);
     return g;
   },
+  m249(m) {
+    const g = new THREE.Group();
+    part(g, RB(0.05, 0.072, 0.34, 0.008), m.metal, 0, 0.035, -0.05);
+    part(g, RB(0.046, 0.02, 0.24, 0.006), m.metal, 0, 0.082, -0.03);
+    part(g, BX(0.03, 0.022, 0.05), m.metal, 0, 0.094, -0.16);
+    part(g, CY(0.017, 0.42), m.metal, 0, 0.05, -0.42, Math.PI / 2);
+    for (let i = 0; i < 7; i++) part(g, CY(0.0205, 0.008), m.metal, 0, 0.05, -0.28 - i * 0.05, Math.PI / 2);
+    part(g, CY(0.024, 0.06, 12), m.metal, 0, 0.05, -0.64, Math.PI / 2);
+    part(g, BX(0.02, 0.042, 0.02), m.metal, 0, 0.086, -0.6);
+    part(g, RB(0.05, 0.05, 0.18, 0.008), m.metal, 0, 0.02, -0.24);
+    part(g, BX(0.012, 0.03, 0.14), m.metal, 0, 0.1, -0.12);
+    part(g, BX(0.052, 0.012, 0.014), m.metal, 0, 0.116, -0.12);
+    const box = part(g, RB(0.09, 0.11, 0.13, 0.01), m.olive, -0.075, -0.03, -0.05, 0, 0, 0, 'mag');
+    void box;
+    for (const x of [-0.022, 0.022]) part(g, CY(0.006, 0.16), m.metal, x, -0.07, -0.5, 0.55, 0, 0);
+    part(g, RB(0.033, 0.1, 0.046, 0.008), m.black, 0, -0.045, 0.05, 0.3);
+    part(g, RB(0.046, 0.075, 0.22, 0.01), m.black, 0, 0.01, 0.2, -0.06);
+    part(g, BX(0.014, 0.014, 0.06), m.steel, 0.028, 0.06, -0.02, 0, 0, 0, 'bolt');
+    anchor(g, 'grip', 0, -0.04, 0.05);
+    anchor(g, 'fore', 0, 0.0, -0.28);
+    anchor(g, 'muzzle', 0, 0.05, -0.7);
+    anchor(g, 'eject', 0.032, 0.07, -0.02);
+    anchor(g, 'magwell', -0.06, -0.04, -0.05);
+    return g;
+  },
+  m3(m) {
+    const g = new THREE.Group();
+    part(g, RB(0.05, 0.062, 0.22, 0.008), m.metal, 0, 0.03, 0.02);
+    part(g, CY(0.0165, 0.5), m.metal, 0, 0.052, -0.31, Math.PI / 2);
+    part(g, CY(0.014, 0.44), m.metal, 0, 0.024, -0.29, Math.PI / 2);
+    part(g, RB(0.052, 0.05, 0.17, 0.014), m.wood, 0, 0.036, -0.24);
+    part(g, BX(0.013, 0.032, 0.014), m.metal, 0, 0.082, -0.53);
+    part(g, BX(0.032, 0.02, 0.05), m.metal, 0, 0.075, -0.02);
+    const mag = part(g, RB(0.03, 0.05, 0.12, 0.006), m.metal, 0, -0.005, -0.06, 0, 0, 0, 'mag');
+    void mag;
+    part(g, RB(0.042, 0.078, 0.24, 0.012), m.wood, 0, 0.0, 0.19, -0.05);
+    part(g, RB(0.04, 0.09, 0.032, 0.008), m.wood, 0, -0.05, -0.02, 0.2);
+    anchor(g, 'grip', 0, -0.03, -0.01);
+    anchor(g, 'fore', 0, 0.0, -0.26);
+    anchor(g, 'muzzle', 0, 0.052, -0.57);
+    anchor(g, 'magwell', 0, 0.0, -0.06);
+    return g;
+  },
+  thompson(m) {
+    const g = new THREE.Group();
+    part(g, RB(0.045, 0.058, 0.28, 0.01), m.metal, 0, 0.038, -0.07);
+    part(g, BX(0.028, 0.018, 0.26), m.metal, 0, 0.075, -0.06);
+    part(g, CY(0.012, 0.28), m.steel, 0, 0.038, -0.3, Math.PI / 2);
+    for (let i = 0; i < 5; i++) part(g, CY(0.0165, 0.008), m.metal, 0, 0.038, -0.2 - i * 0.028, Math.PI / 2);
+    part(g, CY(0.019, 0.05, 12), m.metal, 0, 0.038, -0.46, Math.PI / 2);
+    part(g, BX(0.012, 0.035, 0.012), m.metal, 0, 0.075, -0.4);
+    part(g, RB(0.026, 0.1, 0.032, 0.008), m.wood, 0, -0.03, -0.2, 0.14);
+    const drum = part(g, CX(0.056, 0.05, 18), m.metal, -0.042, -0.02, -0.1, 0, 0, 0.3, 'mag');
+    void drum;
+    part(g, RB(0.03, 0.095, 0.04, 0.008), m.wood, 0, -0.038, 0.02, 0.32);
+    part(g, RB(0.038, 0.07, 0.16, 0.01), m.wood, 0, 0.02, 0.16, -0.04);
+    part(g, BX(0.012, 0.012, 0.05), m.steel, 0.024, 0.058, -0.05, 0, 0, 0, 'bolt');
+    anchor(g, 'grip', 0, -0.032, 0.02);
+    anchor(g, 'fore', 0, 0.0, -0.2);
+    anchor(g, 'muzzle', 0, 0.038, -0.49);
+    anchor(g, 'eject', 0.028, 0.062, -0.02);
+    anchor(g, 'magwell', -0.03, -0.03, -0.1);
+    return g;
+  },
   deagle(m) {
     const g = new THREE.Group();
     const slide = new THREE.Group(); slide.name = 'slide'; g.add(slide);

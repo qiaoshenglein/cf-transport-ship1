@@ -23,6 +23,17 @@ export class HUD {
     this.hitT = 0; this.toastT = 0;
     this.slotsT = 0;
     this.radarCtx = this.el.radar.getContext('2d');
+    // BOSS 血条：不进 TEMPLATE（模板字符串太长），按需挂在 #ui 顶层
+    this.bossEl = document.createElement('div');
+    this.bossEl.id = 'bossBar'; this.bossEl.className = 'hidden';
+    this.bossEl.innerHTML = '<div class="bn"></div><div class="bt"><div class="bf"></div></div>';
+    this.root.appendChild(this.bossEl);
+    this._bossTxt = ''; this._bossPct = -1;
+    // 附身 BOSS 时的视野染色：一眼确认"我已经不是人了"，同时压住边缘视野
+    this.veilEl = document.createElement('div');
+    this.veilEl.id = 'bossVeil'; this.veilEl.className = 'hidden';
+    this.root.appendChild(this.veilEl);
+    this._veil = '';
     const touch = matchMedia('(pointer:coarse)').matches;
     this.opts = { team: 'BL', primary: 'ak47', size: 6, diff: 'normal', goal: 50, tod: 'day', quality: touch ? 'low' : 'high', sens: 1.0, fov: 78, vol: 0.8 };
     try { Object.assign(this.opts, JSON.parse(localStorage.getItem('cf_ship_opts') || '{}')); } catch (e) { /* 忽略 */ }
@@ -95,13 +106,16 @@ export class HUD {
   update(dt, s) {
     const e = this.el;
     // 比分与时间
+    if (!this._teamL) this._teamL = [e.tBL.querySelector('.nm'), e.tGR.querySelector('.nm')];
+    const lab = this.pve() ? ['清怪小队', '怪潮'] : ['潜伏者', '保卫者'];
+    if (this._teamL[0].textContent !== lab[0]) { this._teamL[0].textContent = lab[0]; this._teamL[1].textContent = lab[1]; }
     e.sBL.textContent = s.score.BL; e.sGR.textContent = s.score.GR;
     const tl = Math.max(0, s.timeLeft), mm = (tl / 60) | 0, ss = (tl % 60) | 0;
     e.sTime.textContent = `${mm}:${ss < 10 ? '0' : ''}${ss}`;
-    e.sGoal.textContent = `团队竞技 · 目标 ${s.goal}`;
+    e.sGoal.textContent = this.pve() ? '僵尸挑战 · 合作清怪' : `团队竞技 · 目标 ${s.goal}`;
     e.tBL.classList.toggle('mine', s.myTeam === 'BL'); e.tGR.classList.toggle('mine', s.myTeam === 'GR');
     // 生命护甲
-    e.hpVal.textContent = Math.max(0, Math.ceil(s.hp));
+    e.hpVal.textContent = s.hpMax > 100 ? `${Math.max(0, Math.ceil(s.hp))}/${s.hpMax}` : String(Math.max(0, Math.ceil(s.hp)));
     e.arVal.textContent = Math.max(0, Math.ceil(s.armor));
     e.hpBox.classList.toggle('low', s.hp <= 30 && s.alive);
     // 弹药
@@ -142,11 +156,13 @@ export class HUD {
     // 提示
     if (this.toastT > 0) { this.toastT -= dt; if (this.toastT <= 0) e.toast.style.opacity = 0; }
     // 中央信息
-    if (!s.alive && s.respawnIn > 0) {
-      e.center.classList.remove('hidden');
-      e.cBig.innerHTML = s.killedBy || '你阵亡了';
+    const showCenter = !s.alive && s.respawnIn > 0;
+    if (showCenter !== this._centerOn) { this._centerOn = showCenter; e.center.classList.toggle('hidden', !showCenter); }
+    if (showCenter) {
+      const kb = s.killedBy || '你阵亡了';
+      if (this._cBig !== kb) { e.cBig.innerHTML = kb; this._cBig = kb; }
       e.cSmall.textContent = `${s.respawnIn.toFixed(1)} 秒后复活 · 按 B 更换武器`;
-    } else e.center.classList.add('hidden');
+    }
     e.protect.textContent = s.protect > 0 && s.alive ? `出生保护 ${s.protect.toFixed(1)}s（开火即解除）` : '';
     e.nameTip.textContent = s.aimName || ''; e.nameTip.className = s.aimTeam || '';
     if (this.slotsT > 0) { this.slotsT -= dt; e.slots.style.opacity = Math.min(1, this.slotsT * 2); } else e.slots.style.opacity = 0;
@@ -191,28 +207,63 @@ export class HUD {
     b.classList.add('show');
   }
   toast(text, dur = 2.5) { const t = this.el.toast; t.innerHTML = text; t.style.opacity = 1; this.toastT = dur; }
+  pve() { const r = this.g.net && this.g.net.room; return !!(r && r.mode === 'pve'); }
+  // BOSS 血条：b = { nm, hp, hpMax, by, who }，传 null 即隐藏
+  bossBar(b) {
+    const el = this.bossEl; if (!el) return;
+    if (!b || !b.hpMax) { if (!el.classList.contains('hidden')) { el.classList.add('hidden'); this._bossTxt = ''; } return; }
+    el.classList.remove('hidden');
+    const txt = `${b.nm}${b.by ? `（${b.who || '玩家'} 附身）` : ''} · ${Math.max(0, Math.ceil(b.hp))} / ${b.hpMax}`;
+    if (txt !== this._bossTxt) { this._bossTxt = txt; el.querySelector('.bn').textContent = txt; }
+    const pct = Math.max(0, Math.min(1, b.hp / b.hpMax));
+    if (Math.abs(pct - this._bossPct) > 0.002) { this._bossPct = pct; el.querySelector('.bf').style.width = (pct * 100).toFixed(1) + '%'; }
+  }
+  teamCN(team) { return this.pve() ? (team === 'BL' ? '清怪小队' : '怪潮') : TEAM_CN[team]; }
+  // 附身 BOSS 的屏幕染色：color 传 '#rrggbb'，传 null 关掉
+  bossVeil(color) {
+    const el = this.veilEl; if (!el) return;
+    const c = color || '';
+    if (c === this._veil) return;
+    this._veil = c;
+    if (!c) { el.classList.add('hidden'); el.style.background = ''; return; }
+    el.style.background = `radial-gradient(ellipse at center, rgba(0,0,0,0) 38%, ${c}55 78%, ${c}99 100%)`;
+    el.classList.remove('hidden');
+  }
   scoreboard(show, actors, myId, score) {
     this.el.board.classList.toggle('hidden', !show);
     if (!show) return;
-    const rows = (team) => actors.filter((a) => a.team === team).sort((a, b) => b.stats.k - a.stats.k || a.stats.d - b.stats.d)
-      .map((a) => `<tr class="${a.id === myId ? 'me' : ''} ${a.alive ? '' : 'dead'}"><td>${esc(a.name)}</td><td>${a.stats.k}</td><td>${a.stats.d}</td><td>${a.stats.hs}</td><td>${a.ping}</td></tr>`).join('');
-    const tbl = (team) => `<table class="t${team}"><tr><th class="team">${TEAM_CN[team]} · ${score[team]}</th><th>击杀</th><th>死亡</th><th>爆头</th><th>延迟</th></tr>${rows(team)}</table>`;
+    const row = (a) => {
+      const mark = a.isBoss ? '<span title="BOSS">👑</span> ' : a.isBot ? '<span style="opacity:.7" title="机器人">🤖</span> ' : '';
+      const hpTxt = a.isBoss && a.bossHpMax ? ` <span style="opacity:.75">· ${Math.max(0, Math.ceil(a.bossHp))}/${a.bossHpMax}</span>` : '';
+      return `<tr class="${a.id === myId ? 'me' : ''} ${a.alive ? '' : 'dead'}"><td>${mark}${esc(a.name)}${hpTxt}</td><td>${a.stats.k}</td><td>${a.stats.d}</td><td>${a.stats.hs}</td><td>${a.ping}</td></tr>`;
+    };
+    // PVE 小怪数量多且无个人战绩，折叠成一行汇总（BOSS 单独成行），避免刷满计分板
+    const monRow = (mons) => {
+      if (!mons.length) return '';
+      const alive = mons.reduce((n, m) => n + (m.alive ? 1 : 0), 0);
+      return `<tr class="${alive ? '' : 'dead'}"><td>🧟 怪物 ×${mons.length}（存活 ${alive}）</td><td colspan="4" style="opacity:.7">波次推进中</td></tr>`;
+    };
+    const rows = (team) => actors.filter((a) => a.team === team && !(a.isMonster && !a.isBoss)).sort((a, b) => b.stats.k - a.stats.k || a.stats.d - b.stats.d).map(row).join('')
+      + monRow(actors.filter((a) => a.team === team && a.isMonster && !a.isBoss));
+    const tbl = (team) => `<table class="t${team}"><tr><th class="team">${this.teamCN(team)} · ${score[team]}</th><th>击杀</th><th>死亡</th><th>爆头</th><th>延迟</th></tr>${rows(team)}</table>`;
     this.el.boardBody.innerHTML = `<div class="cols">${tbl('BL')}${tbl('GR')}</div>`;
   }
   endScreen(win, score, actors, myId) {
     this.show('end');
     const r = this.el.endRes;
-    r.textContent = win === null ? '平局' : win ? '胜利' : '失败';
+    const pve = this.pve();
+    r.textContent = win === null ? '平局' : pve ? (win ? '顶住了怪潮' : '船头失守') : (win ? '胜利' : '失败');
     r.className = 'res ' + (win ? 'win' : 'lose');
-    this.el.endSc.textContent = `潜伏者 ${score.BL} : ${score.GR} 保卫者`;
+    this.el.endSc.textContent = pve ? `清怪 ${score.BL} 只 · 阵亡 ${score.GR} 次` : `潜伏者 ${score.BL} : ${score.GR} 保卫者`;
     const mvp = [...actors].sort((a, b) => (b.stats.k * 2 - b.stats.d + b.stats.hs) - (a.stats.k * 2 - a.stats.d + a.stats.hs))[0];
     this.el.endMvp.textContent = mvp ? `MVP：${mvp.name}（${mvp.stats.k} 杀 / ${mvp.stats.hs} 爆头）` : '';
     const me = actors.find((a) => a.id === myId);
     const acc = me && me.stats.shots ? ((me.stats.hits / me.stats.shots) * 100).toFixed(1) : '0';
     this.el.endMe.textContent = me ? `你的战绩：${me.stats.k} 击杀 · ${me.stats.d} 死亡 · ${me.stats.hs} 爆头 · 命中率 ${acc}%` : '';
-    const rows = (team) => actors.filter((a) => a.team === team).sort((a, b) => b.stats.k - a.stats.k)
-      .map((a) => `<tr class="${a.id === myId ? 'me' : ''}"><td>${esc(a.name)}</td><td>${a.stats.k}</td><td>${a.stats.d}</td><td>${a.stats.hs}</td></tr>`).join('');
-    const tbl = (team) => `<table class="t${team}"><tr><th class="team">${TEAM_CN[team]}</th><th>击杀</th><th>死亡</th><th>爆头</th></tr>${rows(team)}</table>`;
+    const rows = (team) => actors.filter((a) => a.team === team && !a.isMonster).sort((a, b) => b.stats.k - a.stats.k)
+      .map((a) => `<tr class="${a.id === myId ? 'me' : ''}"><td>${esc(a.name)}</td><td>${a.stats.k}</td><td>${a.stats.d}</td><td>${a.stats.hs}</td></tr>`).join('')
+      + (() => { const mons = actors.filter((a) => a.team === team && a.isMonster); return mons.length ? `<tr><td>🧟 怪物 ×${mons.length}</td><td colspan="3" style="opacity:.7">—</td></tr>` : ''; })();
+    const tbl = (team) => `<table class="t${team}"><tr><th class="team">${this.teamCN(team)}</th><th>击杀</th><th>死亡</th><th>爆头</th></tr>${rows(team)}</table>`;
     this.el.endTable.innerHTML = `<div class="cols">${tbl('BL')}${tbl('GR')}</div>`;
   }
   // ---------- 小地图 ----------
@@ -243,7 +294,10 @@ export class HUD {
   }
   drawRadar(me, actors, t) {
     const ctx = this.radarCtx, cv = this.el.radar;
-    const W = cv.width = cv.clientWidth * 1.5 | 0, H = cv.height = cv.clientHeight * 1.5 | 0;
+    // 仅在尺寸变化时才重设 canvas.width/height（赋值会清空并重新分配 backing store），并失效缓存渐变
+    const dW = cv.clientWidth * 1.5 | 0, dH = cv.clientHeight * 1.5 | 0;
+    if (cv.width !== dW || cv.height !== dH) { cv.width = dW; cv.height = dH; this._radarGrad = null; }
+    const W = dW, H = dH;
     ctx.clearRect(0, 0, W, H);
     if (!this.radarImg) return;
     const S = this.radarS, zoom = 0.55 * (W / 294);
@@ -257,12 +311,19 @@ export class HUD {
     ctx.globalAlpha = 1;
     for (const a of actors) {
       if (a === me) continue;
-      const seen = a.team === me.team || (a.radarT > 0);
+      const seen = a.team === me.team || a.radarT > 0 || a.isBoss;   // BOSS 常驻雷达：它是本轮的目标
       if (!seen) continue;
       const px = (a.pos.x + 37) * S, pz = (a.pos.z + 13) * S;
       if (!a.alive) {
         if (a.team !== me.team || a.deadT > 5) continue;
         ctx.strokeStyle = '#9aa'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px - 8, pz - 8); ctx.lineTo(px + 8, pz + 8); ctx.moveTo(px + 8, pz - 8); ctx.lineTo(px - 8, pz + 8); ctx.stroke();
+        continue;
+      }
+      if (a.isBoss) {
+        ctx.fillStyle = '#ff3a2a';
+        ctx.beginPath(); ctx.arc(px, pz, 13, 0, 7); ctx.fill();
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(px, pz, 20 + Math.sin(t * 3) * 4, 0, 7); ctx.stroke();
         continue;
       }
       ctx.fillStyle = a.team === me.team ? '#4fb0ff' : '#ff4a3a';
@@ -281,9 +342,13 @@ export class HUD {
     ctx.fillStyle = '#ffd24a';
     ctx.beginPath(); ctx.moveTo(W / 2, H / 2 - 10); ctx.lineTo(W / 2 + 7, H / 2 + 8); ctx.lineTo(W / 2, H / 2 + 4); ctx.lineTo(W / 2 - 7, H / 2 + 8); ctx.closePath(); ctx.fill();
     // 视野扇形
-    const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.45);
-    g.addColorStop(0, 'rgba(255,255,255,.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(W / 2, H / 2); ctx.arc(W / 2, H / 2, W * 0.45, -Math.PI / 2 - 0.6, -Math.PI / 2 + 0.6); ctx.closePath(); ctx.fill();
+    // 视野扇形（渐变按尺寸缓存，避免每帧 createRadialGradient）
+    if (!this._radarGrad) {
+      const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, W * 0.45);
+      g.addColorStop(0, 'rgba(255,255,255,.18)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      this._radarGrad = g;
+    }
+    ctx.fillStyle = this._radarGrad; ctx.beginPath(); ctx.moveTo(W / 2, H / 2); ctx.arc(W / 2, H / 2, W * 0.45, -Math.PI / 2 - 0.6, -Math.PI / 2 + 0.6); ctx.closePath(); ctx.fill();
   }
 }
 
@@ -291,7 +356,7 @@ function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 const PRIM_CARDS = PRIMARIES.map((id) => {
   const d = WEAPONS[id];
-  const sub = { ak47: '潜伏者经典 · 伤害高', m4a1: '保卫者经典 · 稳定', awm: '一枪致命 · 需开镜', mp5: '射速快 · 移动灵活' }[id];
+  const sub = { ak47: '潜伏者经典 · 伤害高', m4a1: '保卫者经典 · 稳定', awm: '一枪致命 · 需开镜', mp5: '射速快 · 移动灵活', m249: '弹链压制 · 100 发', m3: '贴身爆发 · 霰弹八丸', thompson: '弹鼓扫射 · 高伤冲锋' }[id];
   return `<div class="card" data-w="${id}"><img alt=""><b>${d.name}</b><small>${sub}</small></div>`;
 }).join('');
 
@@ -344,7 +409,7 @@ const TEMPLATE = `
     </div>
     <div class="opts">
       <div class="opt"><div class="lab">阵营</div><div class="seg team" data-k="team"><button data-v="BL">潜伏者<small>Black List</small></button><button data-v="GR">保卫者<small>Global Risk</small></button></div></div>
-      <div class="opt"><div class="lab">主武器</div><div class="seg" data-k="primary"><button data-v="ak47">AK-47</button><button data-v="m4a1">M4A1</button><button data-v="awm">AWM</button><button data-v="mp5">MP5</button></div></div>
+      <div class="opt"><div class="lab">主武器</div><div class="seg" data-k="primary"><button data-v="ak47">AK-47</button><button data-v="m4a1">M4A1</button><button data-v="awm">AWM</button><button data-v="mp5">MP5</button><button data-v="m249">M249</button><button data-v="m3">M3</button><button data-v="thompson">汤姆逊</button></div></div>
       <div class="row2">
         <div class="opt"><div class="lab">对战规模</div><div class="seg" data-k="size"><button data-v="4">4v4</button><button data-v="6">6v6</button><button data-v="8">8v8</button></div></div>
         <div class="opt"><div class="lab">目标击杀</div><div class="seg" data-k="goal"><button data-v="30">30</button><button data-v="50">50</button><button data-v="100">100</button></div></div>
@@ -367,7 +432,7 @@ const TEMPLATE = `
   </div>
 </div>
 
-<div id="pause" class="screen hidden"><div class="pauseBox"><h2>暂停</h2>
+<div id="pause" class="screen hidden"><div class="pauseBox"><h2>暂停</h2><div class="pauseTip note" style="margin:2px 0 8px"></div>
   <div class="opt"><div class="lab">鼠标灵敏度</div><div class="slider" data-k="sens"><input type="range" min="0.2" max="3" step="0.05"><span></span></div></div>
   <div class="opt"><div class="lab">视野 FOV</div><div class="slider" data-k="fov"><input type="range" min="65" max="100" step="1"><span></span></div></div>
   <div class="opt"><div class="lab">音量</div><div class="slider" data-k="vol"><input type="range" min="0" max="1" step="0.05"><span></span></div></div>

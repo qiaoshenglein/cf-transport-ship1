@@ -168,17 +168,33 @@ export class Game {
     setTimeout(() => audio.announce('Go go go!'), 400);
     this.hud.toast(`团队竞技 · 率先达到 <b style="color:#f5b321">${this.goal}</b> 击杀的队伍获胜`, 3.5);
   }
-  addTag(b) {
+  // opt: 名牌文案 / 配色 / 尺寸（BOSS 用大号的红名，队友仍是默认小队色）
+  addTag(b, opt) {
+    const o = opt || {};
     const c = document.createElement('canvas'); c.width = 256; c.height = 48;
     const x = c.getContext('2d');
-    x.font = 'bold 30px "PingFang SC","Microsoft YaHei",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.lineWidth = 5; x.strokeStyle = 'rgba(0,0,0,.8)'; x.strokeText(b.name, 128, 24);
-    x.fillStyle = b.team === 'BL' ? '#ff9b70' : '#8cc8ff'; x.fillText(b.name, 128, 24);
+    const txt = o.text || b.name;
+    let fs = 30;
+    x.font = `bold ${fs}px "PingFang SC","Microsoft YaHei",sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle';
+    const w = x.measureText(txt).width;
+    if (w > 244) { fs = Math.max(15, (244 / w) * 30) | 0; x.font = `bold ${fs}px "PingFang SC","Microsoft YaHei",sans-serif`; }
+    x.lineWidth = 5; x.strokeStyle = 'rgba(0,0,0,.8)'; x.strokeText(txt, 128, 24);
+    x.fillStyle = o.color || (b.team === 'BL' ? '#ff9b70' : '#8cc8ff'); x.fillText(txt, 128, 24);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, opacity: 0.85, toneMapped: false }));
-    s.scale.set(1.3, 0.244, 1); s.renderOrder = 20;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true, opacity: o.big ? 0.95 : 0.85, toneMapped: false }));
+    s.scale.set(o.big ? 2.2 : 1.3, o.big ? 0.41 : 0.244, 1); s.renderOrder = o.big ? 21 : 20;
     this.renderer.scene.add(s);
-    this.tags.push({ sprite: s, actor: b });
+    this.tags.push({ sprite: s, actor: b, big: !!o.big });
+  }
+  // 阵营变化（PVE 附身 BOSS）时撤掉队友名牌
+  removeTag(b) {
+    const i = this.tags.findIndex((t) => t.actor === b);
+    if (i < 0) return;
+    const t = this.tags[i];
+    this.renderer.scene.remove(t.sprite);
+    if (t.sprite.material.map) t.sprite.material.map.dispose();
+    t.sprite.material.dispose();
+    this.tags.splice(i, 1);
   }
   spawnActor(a, first) {
     const pts = this.map.spawns[a.team];
@@ -221,13 +237,17 @@ export class Game {
     }
   }
   pause() {
-    if (this.net) { this.hud.show('pause'); this.hud.scoreboard(false); return; } // 联机不暂停模拟
+    // 联机时服务端不会暂停：打开菜单 = 停止发送输入，人物原地站立（仍会被攻击）
     this.paused = true; this.hud.show('pause');
     this.hud.scoreboard(false);
+    const h = document.querySelector('#pause h2');
+    if (h) h.textContent = this.net ? '菜单' : '暂停';
+    const tip = document.querySelector('#pause .pauseTip');
+    if (tip) tip.textContent = this.net ? '对局仍在进行：你站在原地且可能被攻击' : '';
   }
   resume(fromLock) {
     this.paused = false; this.hud.show(null);
-    if (!fromLock && !this.inLoadout) this.lock();
+    if (!fromLock && !this.inLoadout && this.player) this.lock();
   }
   quitToMenu() {
     if (this.net) this.net.leave();
@@ -291,10 +311,11 @@ export class Game {
   fireWeapon(a, ws, spread) {
     const d = ws.def;
     const eye = a.eye(new THREE.Vector3());
-    const dir = a.forward(new THREE.Vector3());
-    jitterDir(dir, spread, Math.random);
-    let muzzle;
+    const pellets = d.pellets || 1;
+    let dir = null, muzzle = null;
     if (a.isPlayer) {
+      dir = a.forward(new THREE.Vector3());
+      jitterDir(dir, spread, Math.random);
       const cam = this.renderer.camera;
       const right = _v2.set(1, 0, 0).applyQuaternion(cam.quaternion);
       const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
@@ -304,22 +325,29 @@ export class Game {
       audio.playShot(d.sound, null);
       if (Math.random() < 0.5) audio.playShellDrop(null);
     } else {
+      dir = a.forward(new THREE.Vector3());
+      jitterDir(dir, spread, Math.random);
       muzzle = a.soldier.muzzleWorld(new THREE.Vector3());
       this.fx.muzzle(muzzle, dir, d.type === 'sniper' ? 1.6 : d.type === 'smg' ? 0.8 : 1);
       a.soldier.kick();
       audio.playShot(d.sound, muzzle);
     }
     a.radarT = 1.6;
-    // 让附近的机器人听到
     for (const b of this.actors) if (b !== a && b.hear && b.team !== a.team && b.pos.distanceTo(a.pos) < 45) b.hear(a.pos, true);
-    const end = this.traceBullet(a, eye, dir, d);
-    if (!a.isPlayer || Math.random() < 0.35 || d.type === 'sniper') this.fx.tracer(muzzle, end);
-    // 子弹掠过玩家
+    // 每颗弹丸独立散布并命中（霰弹枪 pellets>1）
+    for (let p = 0; p < pellets; p++) {
+      const pd = p === 0 ? dir.clone() : dir.clone();
+      if (p > 0) jitterDir(pd, spread, Math.random);
+      const end = this.traceBullet(a, eye, pd, d);
+      if (p === 0 && (!a.isPlayer || Math.random() < 0.35 || d.type === 'sniper')) this.fx.tracer(muzzle, end);
+      else if (p > 0) this.fx.tracer(muzzle, end);
+    }
+    // 子弹掠过玩家（用首发方向判定）
     const p = this.player;
     if (p && p.alive && a !== p && a.team !== p.team) {
       const hp = p.eye(_v);
       const t = _d.copy(hp).sub(eye).dot(dir);
-      if (t > 2 && t < eye.distanceTo(end)) {
+      if (t > 2 && t < eye.distanceTo(eye.clone().addScaledVector(dir, d.range))) {
         const closest = eye.clone().addScaledVector(dir, t);
         if (closest.distanceTo(hp) < 1.3) audio.playBulletWhiz(closest);
       }
@@ -329,7 +357,6 @@ export class Game {
     const range = d.range;
     const hits = this.world.raycastAll(o.x, o.y, o.z, dir.x, dir.y, dir.z, range);
     let power = d.pen, mul = 1, wall = false, from = 0;
-    this.frame++;
     for (let i = 0; i <= hits.length; i++) {
       const h = hits[i];
       const lim = h ? h.t : range;
@@ -337,7 +364,7 @@ export class Game {
       let best = null, bestT = lim, part = null;
       for (const a of this.actors) {
         if (!a.alive || a === shooter || a.team === shooter.team) continue;
-        const r = a.soldier.hitTest(o, dir, bestT, this.frame);
+        const r = a.soldier.hitTest(o, dir, bestT, this.htFrame);
         if (r && r.t > from - 0.01 && r.t < bestT) { best = a; bestT = r.t; part = r.part; }
       }
       if (best) {
@@ -377,13 +404,12 @@ export class Game {
     const eye = a.eye(new THREE.Vector3());
     const base = a.forward(new THREE.Vector3());
     if (a.isPlayer) this.vm.melee(heavy);
-    this.frame++;
     let hit = null;
     for (const off of [0, 0.12, -0.12, 0.24, -0.24]) {
       const dir = base.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), off);
       for (const b of this.actors) {
         if (!b.alive || b === a || b.team === a.team) continue;
-        const r = b.soldier.hitTest(eye, dir, range, this.frame);
+        const r = b.soldier.hitTest(eye, dir, range, this.htFrame);
         if (r && (!hit || r.t < hit.t)) hit = { a: b, t: r.t, part: r.part, dir };
       }
       if (hit) break;
@@ -573,6 +599,9 @@ export class Game {
     if (dt <= 0) return;
     const R = this.renderer, cam = R.camera;
     this.realTime = (this.realTime || 0) + dt;
+    // 阴影隔帧刷新（太阳静止，仅士兵投影随动；开场前几帧强制刷新避免无阴影）
+    this.shadowTick = (this.shadowTick || 0) + 1;
+    if (this.shadowTick % 2 === 0 || this.shadowTick <= 2) R.renderer.shadowMap.needsUpdate = true;
     const active = this.playing && !this.paused;
     if (active) this.simulate(dt);
     else if (!this.playing) {
@@ -582,15 +611,24 @@ export class Game {
       cam.lookAt(-4, 1.5, 0);
       cam.fov = 60; cam.updateProjectionMatrix();
     }
+    // 菜单/暂停等非战斗态限帧 ~30fps，降低无谓 GPU 负载（战斗态保持满帧）
+    if (!active) {
+      this.idleAcc = (this.idleAcc || 0) + dt;
+      if (this.idleAcc < 1 / 30) return;
+      this.idleAcc = 0;
+    }
     this.renderFrame(dt);
   }
-  // 调试：无渲染快进
+  // 调试：无渲染快进（仅限单机；联机快进会撕裂预测）
   fastForward(seconds, step = 1 / 30) {
+    if (this.net) return null;
     for (let t = 0; t < seconds && this.playing; t += step) this.simulate(step);
     return { score: this.score, time: this.time.toFixed(1), kills: this.actors.map((a) => a.name + ':' + a.stats.k + '/' + a.stats.d).join(' ') };
   }
   simulate(dt) {
     if (this.net) { this.net.update(dt); return; }
+    // 命中盒逆矩阵缓存键：每个模拟 tick 只自增一次，令同帧内所有射击/近战/瞄准共用缓存
+    this.htFrame = (this.htFrame || 0) + 1;
     const cam = this.renderer.camera;
     {
       this.time += dt;
@@ -695,10 +733,9 @@ export class Game {
       const wh = this.world.raycast(o.x, o.y, o.z, d.x, d.y, d.z, 80, 'sight');
       const lim = wh ? wh.t : 80;
       let best = null, bt = lim;
-      this.frame++;
       for (const a of this.actors) {
         if (a === p || !a.alive) continue;
-        const r = a.soldier.hitTest(o, d, bt, this.frame);
+        const r = a.soldier.hitTest(o, d, bt, this.htFrame);
         if (r) { best = a; bt = r.t; }
       }
       this.aimTarget = best;
