@@ -90,6 +90,23 @@ for (const id of ids) {
   };
   const rB = reach45(blC), rG = reach45(grC), rMax = Math.max(rB, rG);
   if (rMax / Math.min(rB, rG) > 2) fails.push(`开局机动面积差 ${rMax / Math.min(rB, rG)} 倍（BL ${rB} 格 / GR ${rG} 格）——一边出门就是迷宫`);
+  // 双层图的硬规矩（只有声明了 twoLevel 的图才检）：头顶平台下面必须还是能走的地面通路。
+  // NavGrid 只测 0.4~1.8m，架在 2.9m 的甲板对 bot 等于"不存在"；可一旦甲板下堆满掩体，
+  // AI 就实际上被关在楼下，绕后与回防都比玩家慢一层——这是垂直分层图最容易踩的坑。
+  // 老图不检：房屋的屋顶、运输船压在集装箱上的管道走道都属于"下面本就不需要通路"的结构
+  if (def.twoLevel) {
+    const decks = rec.world.colliders.filter((c) => c.solid && c.bottom > 2.2 && c.bottom < 4 && c.top - c.bottom < 1 && !c.yaw && (c.hx * 2) * (c.hz * 2) > 12);
+    for (const d of decks) {
+      let cells = 0, shut = 0;
+      for (let i = Math.ceil((d.minX - x0) / nav.cell); i * nav.cell + x0 <= d.maxX; i++)
+        for (let j = Math.ceil((d.minZ - z0) / nav.cell); j * nav.cell + z0 <= d.maxZ; j++) {
+          if (i < 0 || j < 0 || i >= nav.w || j >= nav.h) continue;
+          cells++;
+          if (nav.block[j * nav.w + i]) shut++;
+        }
+      if (cells > 20 && shut / cells > 0.4) fails.push(`头顶平台 ${Math.round(d.hx * 2)}×${Math.round(d.hz * 2)}m 下有 ${Math.round(shut / cells * 100)}% 走不通（AI 被关在楼下）`);
+    }
+  }
   // 视线体检：把可走点连成线，统计"能打到 30m 外"的比例——新手图最常见的毛病是一条街通直到底
   const pts = [];
   for (let i = 4; i < nav.w; i += 14) for (let j = 4; j < nav.h; j += 12) {
