@@ -1,5 +1,5 @@
 // 权威对局房间：固定 30Hz 模拟、输入队列、延迟补偿命中判定、伤害 / 击杀 / 复活 / 比分 / 断线保留
-import { WEAPONS, PRIMARIES } from '../src/weapons.js';
+import { WEAPONS, PRIMARIES, WeaponState } from '../src/weapons.js';
 import { applyCmd, resetForSpawn, packSelf, shotDir, F } from '../src/netsim.js';
 import { STAND_H, EYE_STAND, RUN } from '../src/movement.js';
 import { boneMatrices, rayHitboxes, chestPoint } from '../src/hitbox.js';
@@ -358,12 +358,13 @@ export class Room {
     this.possessId = p.id; this.bossPool = m.hp; this.bossKind = m.kind;
     p.isBoss = true; p.bossKind = m.kind; p.homePrimary = p.primary; p.primary = sp.weapon; p.team = 'GR';
     this.spawn(p);
+    p.inv[2] = new WeaponState(sp.melee || 'bossclaw');   // 近战槽换成 BOSS 专属巨爪（spawn 已按默认军刀建好 inv）
     p.hpMax = Math.max(1, this.bossPool); p.hp = p.hpMax;
     p.armor = Math.round(sp.armor * (PVE_DIFF[this.pveDiff] || PVE_DIFF.normal).hpK);
     p.inv[0].reserve = 100000; p.protectT = 0;
     p.spdMul = sp.speed / (RUN * ((p.inv[0].def && p.inv[0].def.speed) || 1));
     this.rosterDirty = true;
-    this.events.push({ e: 'possess', id: p.id, name: p.name, k: m.kind, nm: sp.name, hpMax: p.hpMax, prim: p.primary });
+    this.events.push({ e: 'possess', id: p.id, name: p.name, k: m.kind, nm: sp.name, hpMax: p.hpMax, prim: p.primary, mel: sp.melee || 'bossclaw' });
     return p;
   }
   // dead=true：BOSS 被击杀（本轮不再登场，掉落空投）；false：主动下甲，AI 接管剩余血量
@@ -619,8 +620,11 @@ export class Room {
     }
     return { endT, hit, dmg, part, wall };
   }
-  melee(a, heavy) {
-    const d = WEAPONS.knife;
+  melee(a, heavy, wdef, aiScale) {
+    // 用实际装备的近战武器（附身 BOSS 是 bossclaw，伤害/射程都不同），不再一律按军刀算
+    // wdef：显式指定武器（AI BOSS 用 bossclaw）；aiScale：AI 攻击按体质×难度缩放并压一档，避免一爪秒人
+    const cw = a.inv[a.slot];
+    const d = wdef || ((cw && cw.def && cw.def.type === 'melee') ? cw.def : WEAPONS.knife);
     const range = heavy ? d.rangeHeavy : d.rangeLight;
     const o = [a.pos.x, a.pos.y + a.eyeH, a.pos.z];
     const base = shotDir(a, 0);
@@ -637,7 +641,7 @@ export class Room {
       }
       if (hit) break;
     }
-    this.events.push({ e: 'melee', id: a.id, heavy: heavy ? 1 : 0, hit: hit ? hit.v.id : 0 });
+    this.events.push({ e: 'melee', id: a.id, heavy: heavy ? 1 : 0, hit: hit ? hit.v.id : 0, w: d.id });
     const life = a.life;
     this.timers.push({
       t: this.time + (heavy ? 0.33 : 0.1), fn: () => {
@@ -646,12 +650,15 @@ export class Room {
         const vf = [-Math.sin(v.yaw), -Math.cos(v.yaw)], hd = Math.hypot(hit.dir[0], hit.dir[2]) || 1;
         const back = (vf[0] * hit.dir[0] + vf[1] * hit.dir[2]) / hd > 0.5;
         let dmg = heavy ? d.dmgHeavy : d.dmgLight;
+        if (aiScale) dmg *= this.dmgScaleOf(a) * 0.55;   // AI BOSS 爪击：体质×难度再压一档
         if (back) dmg *= heavy ? 2 : 1.6;
         if (hit.part === 'head') dmg *= 1.3;
-        this.damage(v, a, dmg, hit.part, 'knife', { x: hit.dir[0], y: hit.dir[1], z: hit.dir[2] }, false, true);
+        this.damage(v, a, dmg, hit.part, d.id, { x: hit.dir[0], y: hit.dir[1], z: hit.dir[2] }, false, true);
       },
     });
   }
+  // AI BOSS 的专属巨爪横扫：用 bossclaw 判定，但按体质×难度缩放（见 melee 的 aiScale）
+  bossMelee(m, heavy) { this.melee(m, heavy, WEAPONS.bossclaw, true); }
   throwNade(a) {
     const f = shotDir(a, 0);
     const rx = Math.cos(a.yaw), rz = -Math.sin(a.yaw);

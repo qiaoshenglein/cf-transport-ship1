@@ -5,7 +5,7 @@ import { Player } from './player.js';
 import { applyCmd, unpackSelf, resetForSpawn, shotDir, F } from './netsim.js';
 import { makeLoadout } from './weaponsim.js';
 import { B, TICK_RATE, INTERP_DELAY, PROTO_VERSION, decodeWorld } from './protocol.js';
-import { WEAPONS, PRIMARIES } from './weapons.js';
+import { WEAPONS, PRIMARIES, WeaponState } from './weapons.js';
 import { buildGunMerged } from './guns.js';
 import { audio } from './audio.js';
 import { SUPPLY_NAME } from './supplies.js';
@@ -42,7 +42,12 @@ export class NetGame {
     this.nop = {};
     this.predHooks = {
       fire: (a, w, spread, rnd) => this.predShot(a, w, spread, rnd),
-      melee: (a, heavy) => { this.g.vm.melee(heavy); audio.playKnife(heavy ? 'heavy' : 'light', 'miss'); },
+      melee: (a, heavy) => {
+        this.g.vm.melee(heavy);
+        const id = a.inv && a.inv[a.slot] && a.inv[a.slot].id;
+        if (id === 'bossclaw') audio.playClaw(heavy ? 'heavy' : 'light', 'miss');
+        else audio.playKnife(heavy ? 'heavy' : 'light', 'miss');
+      },
       throwNade: () => { },
       nadeStart: () => { this.g.vm.throwNade(); audio.playGrenadePin(); },
       switched: (a, w) => { a.soldier.setWeapon(w.id); this.g.vm.equip(w.id, w.def.draw); audio.playWeaponSwitch(w.id); this.g.hud.slots(a.inv, a.slot); },
@@ -299,6 +304,7 @@ export class NetGame {
     me.primary = w.me.prim;
     resetForSpawn(me, { x: w.me.x, z: w.me.z, yaw: 0 }, w.me.prim, w.me.ss, w.me.pt);
     unpackSelf(me, w.me);
+    if (me.isBoss) { me.inv[2] = new WeaponState('bossclaw'); me._mel = 'bossclaw'; }   // 重连时正附身 BOSS：补回专属近战
     me.stats = { k: 0, d: 0, hs: 0, shots: 0, hits: 0 };
     this.me = me;
     g.player = me; g.actors = [me];
@@ -815,7 +821,9 @@ export class NetGame {
       case 'melee': {
         if (e.id === this.myId) break;
         const a = act(e.id);
-        audio.playKnife(e.heavy ? 'heavy' : 'light', e.hit ? 'flesh' : 'miss', a ? a.pos.clone() : null);
+        const ap = a ? a.pos.clone() : null;
+        if (e.w === 'bossclaw') audio.playClaw(e.heavy ? 'heavy' : 'light', e.hit ? 'flesh' : 'miss', ap);
+        else audio.playKnife(e.heavy ? 'heavy' : 'light', e.hit ? 'flesh' : 'miss', ap);
         break;
       }
       case 'kill': {
@@ -845,6 +853,7 @@ export class NetGame {
           let text = 'KILL', sub = `击杀 ${v ? esc(v.name) : ''}`;
           if (e.m >= 2) { text = MULTI_CN[Math.min(e.m, 8)] || 'MULTI KILL'; sub = `${e.m} 连杀 · ` + sub; setTimeout(() => audio.announce('Multi kill!'), 150); }
           else if (e.hs) { text = 'HEADSHOT'; sub = '爆头 · ' + sub; setTimeout(() => audio.announce('Headshot!'), 150); }
+          else if (e.w === 'bossclaw') { text = 'CLAW KILL'; sub = '巨爪撕杀 · ' + sub; }
           else if (e.w === 'knife') { text = 'KNIFE KILL'; sub = '刀杀 · ' + sub; }
           else if (e.w === 'he') { text = 'GRENADE KILL'; sub = '手雷击杀 · ' + sub; }
           else if (e.wb) { text = 'WALLBANG'; sub = '穿墙击杀 · ' + sub; }
@@ -899,7 +908,7 @@ export class NetGame {
       case 'possess': {
         this.boss = { id: e.id, nm: e.nm, hp: e.hpMax, hpMax: e.hpMax, by: 1, who: e.name };
         if (e.id === this.myId) {
-          this.swapSelfLoadout(e.prim);
+          this.swapSelfLoadout(e.prim, e.mel);            // 近战槽换成 BOSS 专属巨爪
           g.vm.setBossLook(e.k);                       // 第一人称：手臂变成骨爪，袖口染上本种颜色
           g.hud.bossVeil(BOSS_TINT[e.k] || '#ff7a3c');
         } else {
@@ -1068,11 +1077,12 @@ export class NetGame {
   }
 
   // 附身 / 下甲时服务端会整体换装，本地预测的武器对象必须一起换掉（否则身份不同步、散布与后算全歪）
-  swapSelfLoadout(prim) {
+  swapSelfLoadout(prim, melee) {
     const me = this.me;
-    if (!me || !prim || !WEAPONS[prim] || me.primary === prim) return;
-    me.primary = prim;
-    me.inv = makeLoadout(prim, me.shotSeed || 1);
+    const mel = melee || 'knife';
+    if (!me || !prim || !WEAPONS[prim] || (me.primary === prim && (me._mel || 'knife') === mel)) return;
+    me.primary = prim; me._mel = mel;
+    me.inv = makeLoadout(prim, me.shotSeed || 1, mel);
     me.slot = 0; me.lastSlot = 1;
     this.g.vm.equip(prim, me.inv[0].def.draw);
     this.g.hud.slots(me.inv, 0);

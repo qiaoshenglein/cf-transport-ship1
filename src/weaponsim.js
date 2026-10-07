@@ -6,8 +6,9 @@ import { currentSpread, recoilKick, WeaponState } from './weapons.js';
 import { shotRng } from './protocol.js';
 
 // 联机用确定性出生装备：后坐摆动相位由种子决定，客户端预测与服务端一致
-export function makeLoadout(primary, seed) {
-  const inv = [new WeaponState(primary), new WeaponState('deagle'), new WeaponState('knife'), new WeaponState('he')];
+// melee：近战槽（2）用哪把——普通玩家 'knife'，附身 BOSS 换成专属 'bossclaw'
+export function makeLoadout(primary, seed, melee = 'knife') {
+  const inv = [new WeaponState(primary), new WeaponState('deagle'), new WeaponState(melee), new WeaponState('he')];
   inv.forEach((w, i) => { w.patternSeed = shotRng(seed, 100000 + i)() * 6; });
   return inv;
 }

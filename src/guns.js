@@ -297,6 +297,22 @@ const builders = {
     anchor(g, 'muzzle', 0, 0, -0.23);
     return g;
   },
+  // BOSS 专属巨爪：前臂 + 掌 + 三根向前伸出的骨爪（第一人称挥击用；makeIcons 也会遍历到它）
+  bossclaw(m) {
+    const g = new THREE.Group();
+    part(g, RB(0.085, 0.075, 0.22, 0.02), m.black, 0, -0.006, 0.07);      // 前臂
+    part(g, RB(0.1, 0.09, 0.13, 0.025), m.metal, 0, 0, -0.03);            // 掌背
+    const talon = (x, ry, sc) => {
+      const cg = new THREE.ConeGeometry(0.023 * sc, 0.3 * sc, 8);
+      cg.rotateX(-Math.PI / 2);                                          // 锥尖朝 -Z（向前）
+      part(g, cg, m.blade, x, 0.006, -0.17, 0, ry, 0);
+    };
+    talon(-0.06, 0.22, 1); talon(0, 0, 1.2); talon(0.06, -0.22, 1);
+    part(g, RB(0.135, 0.05, 0.055, 0.015), m.red, 0, 0.014, -0.08);       // 爪根护手
+    anchor(g, 'grip', 0, 0, 0.07);
+    anchor(g, 'muzzle', 0, 0, -0.46);
+    return g;
+  },
   he(m) {
     const g = new THREE.Group();
     const body = new THREE.SphereGeometry(0.034, 16, 12); body.scale(1, 1.25, 1);

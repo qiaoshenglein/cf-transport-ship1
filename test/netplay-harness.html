@@ -60,6 +60,21 @@ try {
     if (g) g.traverse((o) => { if (!o.isMesh && o.name) found[o.name] = 1; });
     ok(!err && found.muzzle && found.grip && !!WEAPONS[id] && PRIMARIES.includes(id), '新武器模型构建: ' + id, err ? String(err).slice(0, 90) : '');
   }
+  // BOSS 专属近战巨爪：模型可建（makeIcons 会遍历到 buildGunMerged）、是近战、不进主武器池、可放进近战槽
+  {
+    const { buildGunMerged } = await import('/src/guns.js');
+    const { makeLoadout } = await import('/src/weaponsim.js');
+    let gErr = null, mErr = null, claw = null, mergedClaw = null;
+    try { claw = buildGun('bossclaw'); } catch (e) { gErr = e; }
+    try { mergedClaw = buildGunMerged('bossclaw'); } catch (e) { mErr = e; }
+    const anchors = {}; if (claw) claw.traverse((o) => { if (!o.isMesh && o.name) anchors[o.name] = 1; });
+    ok(!gErr && !!claw && anchors.muzzle && anchors.grip, 'BOSS 巨爪第一人称模型可构建', gErr ? String(gErr).slice(0, 90) : '');
+    ok(!mErr && !!mergedClaw, 'BOSS 巨爪第三人称合并模型可构建（图标用）', mErr ? String(mErr).slice(0, 90) : '');
+    ok(WEAPONS.bossclaw && WEAPONS.bossclaw.type === 'melee' && !PRIMARIES.includes('bossclaw'), '巨爪是近战且不在主武器池');
+    const inv = makeLoadout('m249', 7, 'bossclaw');
+    ok(inv[2].id === 'bossclaw' && inv[0].id === 'm249', 'makeLoadout 可把近战槽设为巨爪', inv[2].id);
+    ok(makeLoadout('ak47', 7)[2].id === 'knife', '默认近战槽仍是军刀');
+  }
 
   // ---------- 角色模型构造（精细化几何 + 手臂 IK） ----------
   const { Soldier } = await import('/src/character.js');

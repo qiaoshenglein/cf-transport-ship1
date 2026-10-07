@@ -69,6 +69,12 @@ export const WEAPONS = {
     dmgLight: 52, dmgHeavy: 100, rangeLight: 1.9, rangeHeavy: 1.6, rateLight: 0.42, rateHeavy: 1.05, draw: 0.4,
     speed: 1.08, sound: 'knife', hudName: 'KNIFE', mag: 0, reserve: 0,
   },
+  // BOSS 专属近战：只有附身 BOSS 的玩家会拿到（不进 PRIMARIES、不在选枪菜单），一爪半血、重击秒杀脆皮
+  bossclaw: {
+    id: 'bossclaw', name: '撕裂巨爪', slot: 2, type: 'melee', auto: true, boss: true,
+    dmgLight: 160, dmgHeavy: 340, rangeLight: 3.2, rangeHeavy: 2.8, rateLight: 0.46, rateHeavy: 1.0, draw: 0.3,
+    speed: 1.0, sound: 'claw', hudName: 'CLAW', mag: 0, reserve: 0,
+  },
   he: {
     id: 'he', name: '手雷', slot: 3, type: 'grenade', auto: false,
     dmg: 115, radius: 7.5, fuse: 2.6, count: 1, draw: 0.5, speed: 1.0, sound: 'grenade', hudName: 'HE GRENADE', mag: 1, reserve: 0,

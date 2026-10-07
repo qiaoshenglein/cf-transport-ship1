@@ -48,7 +48,7 @@ export const round3 = (v) => Math.round(v * 1000) / 1000;
 //             [13]u16 scBL [15]u16 scGR [17]u8 pc [18]u8 nc [20..] 玩家记录(18B) [.. ] 手雷记录(8B)
 const W_MAGIC = 0xC5, W_VER = 2, W_HEAD = 20, P_STRIDE = 18, N_STRIDE = 8;
 const W_POS = 256, W_ANG = 10000, W_VEL = 24, W_TL = 10;   // 量化比例：位置~3.9mm，角度~0.006°，速度~4cm/s
-export const WTABLE = ['ak47', 'm4a1', 'awm', 'mp5', 'deagle', 'knife', 'he', 'm249', 'm3', 'thompson'];
+export const WTABLE = ['ak47', 'm4a1', 'awm', 'mp5', 'deagle', 'knife', 'he', 'm249', 'm3', 'thompson', 'bossclaw'];
 const clamp16 = (v) => v < -32768 ? -32768 : v > 32767 ? 32767 : v | 0;
 const wrapPi = (a) => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
 const dvOf = (d) => (d instanceof ArrayBuffer ? new DataView(d) : ArrayBuffer.isView(d) ? new DataView(d.buffer, d.byteOffset, d.byteLength) : null);

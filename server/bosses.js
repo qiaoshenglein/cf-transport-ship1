@@ -6,21 +6,23 @@
 import { MonsterBrain } from './monsters.js';
 import { B } from '../src/protocol.js';
 import { STAND_H, RUN } from '../src/movement.js';
+import { _aim } from './botai.js';
+const { wrapPi } = _aim;
 
 export const BOSSES = {
   tyran: {
-    name: '铁皮暴君', boss: true, hp: 2400, armor: 400, speed: 3.9, radius: 0.55,
-    weapon: 'm249', auto: true, dmgScale: 0.62, fov: 2.4, see: 60, turn: 2.2, errScale: 0.03, pref: 8, maxR: 24,
+    name: '铁皮暴君', boss: true, hp: 6500, armor: 650, speed: 3.9, radius: 0.55,
+    weapon: 'm249', melee: 'bossclaw', auto: true, dmgScale: 0.62, fov: 2.4, see: 60, turn: 2.2, errScale: 0.03, pref: 8, maxR: 24,
     ability: 'charge', cd: 10, range: 24, slam: { r: 4.4, dmg: 58, knock: 6.5 },
   },
   mother: {
-    name: '瘟疫母体', boss: true, hp: 3000, armor: 260, speed: 2.9, radius: 0.6,
-    weapon: 'm3', auto: false, dmgScale: 0.45, fov: 2.7, see: 42, turn: 1.8, errScale: 0.05, pref: 6, maxR: 12,
+    name: '瘟疫母体', boss: true, hp: 8500, armor: 420, speed: 2.9, radius: 0.6,
+    weapon: 'm3', melee: 'bossclaw', auto: false, dmgScale: 0.45, fov: 2.7, see: 42, turn: 1.8, errScale: 0.05, pref: 6, maxR: 12,
     ability: 'barrage', cd: 9, range: 30, blast: { r: 4.6, dmg: 40 }, summons: 2,
   },
   shade: {
-    name: '幽影猎手', boss: true, hp: 1700, armor: 140, speed: 6.4, radius: 0.42,
-    weapon: 'awm', auto: false, dmgScale: 1.05, fov: 2.2, see: 78, turn: 4.6, errScale: 0.012, pref: 16, maxR: 48,
+    name: '幽影猎手', boss: true, hp: 4800, armor: 260, speed: 6.4, radius: 0.42,
+    weapon: 'awm', melee: 'bossclaw', auto: false, dmgScale: 1.05, fov: 2.2, see: 78, turn: 4.6, errScale: 0.012, pref: 16, maxR: 48,
     ability: 'blink', cd: 6.5, range: 62, blink: 9,
   },
 };
@@ -42,6 +44,7 @@ export class BossBrain extends MonsterBrain {
     this.charge = 0;
     this.chargeTo = null;
     this.summons = 0;
+    this.meleeCd = 0;              // 近身巨爪冷却
   }
   step(room, m, list, dt) {
     const cmd = super.step(room, m, list, dt);
@@ -53,6 +56,12 @@ export class BossBrain extends MonsterBrain {
     if (this.charge > 0) { this.chargeStep(room, m, list, cmd, sp, base, dt); return cmd; } // 冲撞起手就走完，不被晃掉
     const t = this.tgt;
     if (!t || !t.alive) { m.spdMul = base; return cmd; }
+    // 近身巨爪：任何 BOSS 贴脸都能挥一爪（与技能并行——技能管远程/位移，爪管近身压制）
+    this.meleeCd = Math.max(0, this.meleeCd - dt);
+    if (this.meleeCd <= 0 && this.tgtD < 3.3 && this.los(room, m, t)) {
+      const ty = Math.atan2(-(t.pos.x - m.pos.x), -(t.pos.z - m.pos.z));
+      if (Math.abs(wrapPi(m.yaw - ty)) < 0.55) { room.bossMelee(m, Math.random() < 0.28); this.meleeCd = 1.15; }
+    }
     if (sp.ability === 'charge') this.chargeStart(room, m, sp, t);
     else if (sp.ability === 'barrage') this.barrageStep(room, m, list, sp);
     else this.blinkStep(room, m, sp, t);

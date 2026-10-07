@@ -3,6 +3,7 @@
 import { Room } from './room.js';
 import { packSelf, unpackSelf } from '../src/netsim.js';
 import { BOSSES, BOSS_KINDS, bossHpScale } from './bosses.js';
+import { WEAPONS, PRIMARIES } from '../src/weapons.js';
 import { boneMatrices, rayHitboxes } from '../src/hitbox.js';
 import { SIZE } from '../src/bosssize.js';
 import { MAP_IDS, mapOf, suppliesForMap } from '../src/maps.js';
@@ -486,6 +487,22 @@ console.log('[6] PVE BOSS 与补给');
   }
   h.hp = 100; h.hpMax = 100;
 
+  // AI BOSS 近身巨爪：贴脸（2.2m）时会挥出专属近战（走 bossclaw 判定，不是枪）
+  if (lane) {
+    for (const m of [...room.monsters.values()]) room.monsters.delete(m.id);
+    room.pending.length = 0;
+    const bc = room.spawnMonster('tyran');
+    put(bc, lane.ox, lane.oz);
+    bc.yaw = Math.atan2(-lane.mx, -lane.mz); bc.brain.curYaw = bc.yaw;
+    put(h, lane.ox + lane.mx * 2.2, lane.oz + lane.mz * 2.2);
+    h.hp = 1e9; h.hpMax = 1e9; h.armor = 100;   // 别被一爪打死，多观察几 tick
+    clearEv();
+    for (let i = 0; i < 90 && bc.alive; i++) room.step();
+    ok(evAll().some((e) => e.e === 'melee' && e.w === 'bossclaw'), 'AI BOSS 贴脸挥出专属巨爪（melee 事件带 bossclaw）',
+      [...new Set(evAll().filter((e) => e.e === 'melee').map((e) => e.w))].join(',') || '无近战');
+    h.hp = 100; h.hpMax = 100;
+  }
+
   // 补给站：弹药 / 医疗（溢出转护甲）/ 冷却 / 无效不消耗
   const sAmmo = S.find((s) => s.kind === 'ammo'), sMed = S.find((s) => s.kind === 'med');
   for (const m of [...room.monsters.values()]) room.monsters.delete(m.id);
@@ -521,6 +538,14 @@ console.log('[6] PVE BOSS 与补给');
   ok(evAll().some((e) => e.e === 'possess' && e.id === h.id), '下发 possess 事件');
   const pe = evAll().find((e) => e.e === 'possess');
   ok(pe && pe.prim === 'm249', 'possess 事件带回 BOSS 武器（客户端要换装）');
+  // BOSS 专属近战：附身后近战槽换成巨爪，且按巨爪结算伤害
+  ok(h.inv[2].id === 'bossclaw', '附身 BOSS 的近战槽换成专属巨爪', h.inv[2].id);
+  ok(pe && pe.mel === 'bossclaw', 'possess 事件带回专属近战（客户端要换装）');
+  ok(WEAPONS.bossclaw.dmgHeavy > WEAPONS.knife.dmgHeavy * 2 && WEAPONS.bossclaw.dmgLight > WEAPONS.knife.dmgLight * 2, '专属巨爪伤害远高于军刀');
+  ok(!PRIMARIES.includes('bossclaw'), '专属巨爪不进主武器池（玩家选不到）');
+  h.slot = 2; clearEv(); room.melee(h, true); room.step();   // 事件要靠一次 broadcast 才落到连接上
+  ok(evAll().some((e) => e.e === 'melee' && e.w === 'bossclaw'), 'BOSS 近战按专属巨爪结算（melee 事件带 bossclaw）');
+  h.slot = 0;
   const pk = packSelf(h);
   ok(pk.hm === pool && pk.bs === 'tyran' && pk.sm > 0, '自身状态包同步血量上限 / BOSS 形态 / 速度倍率', `hm=${pk.hm} bs=${pk.bs} sm=${pk.sm}`);
   const cl = { pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, inv: h.inv.map(() => ({ mag: 0, reserve: 0, nextFire: 0, reloadUntil: 0, shotsFired: 0, spreadAcc: 0, lastShot: 0, boltUntil: 0 })) };

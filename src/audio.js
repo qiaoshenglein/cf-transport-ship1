@@ -340,6 +340,7 @@ export class AudioSystem {
     try {
       const o = opts || {};
       if (weaponId === 'knife') return this.playKnife('light', 'miss', pos);
+      if (weaponId === 'bossclaw') return this.playClaw('light', 'miss', pos);
       if (weaponId === 'grenade') return this._throwWhoosh(this._pos(pos));
       const P = GUNS[weaponId] || GUNS.m4a1;
       const p = this._pos(pos);
@@ -710,6 +711,32 @@ export class AudioSystem {
       this._done(v);
     } catch (e) {
       this._warn('playKnife', e);
+    }
+  }
+  // BOSS 巨爪：比军刀更低沉、更重的破风声与命中闷响（专属近战）
+  playClaw(kind, result, pos) {
+    if (!this._ok()) return;
+    try {
+      const heavy = kind === 'heavy';
+      const p = this._pos(pos), local = !p;
+      const v = this._voice(p, { g: local ? 0.8 : 1.1, ref: 3, roll: 1.1, max: 60, wet: 0.1 });
+      const t = this._now(), r = jit(0.06);
+      const a = heavy ? 0.13 : 0.08, dur = heavy ? 0.34 : 0.2;
+      this._whoosh(v, t, { a, dur, g: heavy ? 0.7 : 0.55, f0: 210 * r, fp: (heavy ? 1150 : 1650) * r, f1: 400 * r, q: 1.2 });
+      this._whoosh(v, t, { n: 'white', a: a * 0.9, dur: dur * 0.7, g: 0.14, f0: 1400 * r, fp: 3600 * r, f1: 1800 * r, q: 2.2 });
+      const th = t + a * (heavy ? 1.1 : 0.9);
+      const hv = heavy ? 1.5 : 1.1;
+      if (result === 'flesh') {
+        this._nz(v, th, { n: 'pink', a: 0.002, dur: 0.12, g: 0.85 * hv, flt: [{ t: 'lowpass', f: 600 * r, f1: 180, sw: 0.09, q: 0 }] });
+        this._tn(v, th, { f: 95 * r, f1: 42, a: 0.002, dur: 0.14, g: 0.7 * hv });
+        this._nz(v, th + 0.004, { n: 'white', a: 0.005, dur: 0.06, g: 0.3, flt: [{ t: 'bandpass', f: 1200 * r, q: 3 }] });
+      } else if (result === 'wall') {
+        this._metal(v, th, rand(900, 1300), 0.26 * hv, [[1, 1, 0.3], [2.2, 0.7, 0.2], [3.6, 0.45, 0.12]]);
+        this._nz(v, th + 0.003, { n: 'white', a: 0.003, dur: 0.07, g: 0.18, flt: [{ t: 'bandpass', f: 2600, q: 2 }] });
+      }
+      this._done(v);
+    } catch (e) {
+      this._warn('playClaw', e);
     }
   }
 
