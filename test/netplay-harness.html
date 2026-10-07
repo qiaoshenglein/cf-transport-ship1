@@ -201,9 +201,23 @@ try {
     ok(sb.aura && sb.aura.material.opacity > 0.1 && sb.aura.material.transparent === true, '复用材质已复位（透明度不带上一只的残值）', `op=${sb.aura && sb.aura.material.opacity}`);
     undressSoldier(sb);
     // 预编译入口：无真实渲染器（stub）时也要安全返回、不抛
-    let prewarmThrew = false;
-    try { prewarmBossFx(gL.renderer.renderer, gL.renderer.scene, gL.renderer.camera); } catch (e) { prewarmThrew = true; }
-    ok(!prewarmThrew, 'prewarmBossFx 缺渲染器时优雅降级（不抛异常）');
+    let prewarmThrew = false, prewarmZero = -1;
+    try { prewarmZero = prewarmBossFx(undefined, gL.renderer.scene, gL.renderer.camera); } catch (e) { prewarmThrew = true; }
+    ok(!prewarmThrew && prewarmZero === 0, 'prewarmBossFx 缺渲染器时优雅降级（返回 0，不抛异常）', `n=${prewarmZero}`);
+    // 小怪第一次上场同样要现融轮廓件、现建顶点缓冲、现编译着色器，而那个时机恰好是开局第一波——
+    // 所以预编译必须覆盖整个 LOOKS，不能只盯着三种 BOSS。
+    // 这里传假渲染器：只验"每种外观都备好了料、且只调一次 compile"（真编译在浏览器里发生）
+    let compiledCalls = 0;
+    const warmN = prewarmBossFx({ compile: () => { compiledCalls++; } }, gL.renderer.scene, gL.renderer.camera);
+    ok(warmN >= 50 && compiledCalls === 1, 'prewarmBossFx 把所有外观件挂进隐藏组且只 compile 一次', `n=${warmN} compile=${compiledCalls}`);
+    const cold = [];
+    for (const key of Object.keys(LOOKS)) {
+      const s2 = new BSoldier('GR');
+      dressSoldier(s2, key, false, {});
+      if (!s2.matSet || !s2.matSet.prewarmed) cold.push(key);
+      undressSoldier(s2);
+    }
+    ok(cold.length === 0, 'prewarmBossFx 覆盖全部外观种类（小怪首次上场也不现编译）', cold.join(','));
     // 回归：applyRemote 每帧对"已换装远端"跑 LOD/粒子分支——这里曾误用未定义的 g，导致一进 PVE 每帧抛错、渲染循环中断（全客户端卡死）
     const { F } = await import('/src/netsim.js');
     boss.alive = true;                                       // 置活：避免 applyRemote 走 reset() 改动共享的 boss 体型

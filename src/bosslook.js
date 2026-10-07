@@ -230,7 +230,9 @@ function primGeos(key, possessed) {
   PRIM_CACHE.set(ck, o);
   return o;
 }
-// 加载期把三种 BOSS（含附身版）的着色器全部编好：登场那一帧就只剩挂接与移动
+// 加载期把每种外观的着色器与几何全部备好：登场那一帧只剩挂接与移动。
+// 不只是三种 BOSS——感染体/射手/重装第一次上场同样要现融轮廓件、现建缓冲、现编译，
+// 而那个时机恰好是开局第一波，所以遍历整个 LOOKS。附身版只有 BOSS 会走，不必预热。
 export function prewarmBossFx(renderer, scene, camera) {
   if (!renderer || !scene || !camera) return 0;
   const box = new THREE.BoxGeometry(0.02, 0.02, 0.02);
@@ -238,13 +240,27 @@ export function prewarmBossFx(renderer, scene, camera) {
   grp.visible = false;                      // compile 不看 visible，隐藏组照样能把程序编出来
   scene.add(grp);
   let n = 0;
-  for (const key of ['tyran', 'mother', 'shade']) {
-    for (const poss of [false, true]) {
+  for (const key of Object.keys(LOOKS)) {
+    for (const poss of (BOSS_TINT[key] ? [false, true] : [false])) {
       const set = takeSet(key, poss);
+      set.prewarmed = true;                 // 标记"加载期就建好"，回归测试据此判断有没有漏掉某种外观
+      const parts = accParts(key), pg = primGeos(key, poss);
       for (const m of set.list) {
         const o = m.isSpriteMaterial ? new THREE.Sprite(m) : new THREE.Mesh(box, m);
         o.position.set(0, -900, 0);
         grp.add(o); n++;
+      }
+      // 轮廓件与光环/光柱/旋核按真正上场时的"几何 + 材质"配对各走一遍，
+      // 这样第一次刷怪连顶点缓冲都是现成的
+      for (let i = 0; i < parts.desc.length; i++) {
+        if (!parts.desc[i].has) continue;
+        const o = new THREE.Mesh(parts.geos[i], parts.desc[i].m === 'E' ? set.EM : set.AM);
+        o.position.set(0, -900, 0); grp.add(o); n++;
+      }
+      for (const [g, m] of [[pg.ring, set.aura], [pg.beam, set.beam], [pg.core, set.core], [pg.shard, set.core]]) {
+        if (!g || !m) continue;
+        const o = new THREE.Mesh(g, m);
+        o.position.set(0, -900, 0); grp.add(o); n++;
       }
       giveSet(key, poss, set);
     }
