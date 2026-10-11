@@ -779,7 +779,7 @@ export class NetGame {
       const fwd = sp > 0.01 ? (vx * -Math.sin(a.vYaw) + vz * -Math.cos(a.vYaw)) / sp : 0;
       a.soldier.update(dt, { speed: sp, fwd, crouch: a.crouch, pitch: a.vPitch, onGround: a.onGround, reloading: !!(f & F.reload) });
       // 出生保护闪烁；断线者半透明式忽隐忽现（幽灵）
-      a.soldier.mesh.visible = online ? !(a.protectT > 0 && Math.sin(this.g.time * 30) > 0.3) : Math.sin(this.g.time * 5) > -0.2;
+      a.soldier.setBodyVisible(online ? !(a.protectT > 0 && Math.sin(this.g.time * 30) > 0.3) : Math.sin(this.g.time * 5) > -0.2);
     } else {
       a.soldier.root.visible = true;
       a.soldier.root.position.copy(a.vPos);

@@ -189,26 +189,29 @@ export function attachBossModel(sol, kind, scaleMul) {
     // r186 的 AnimationAction 没有 setClampWhenFinished()，clampWhenFinished 是普通属性
     if (sem !== 'idle' && sem !== 'run') { act[sem].setLoop(THREE.LoopOnce, 1); act[sem].clampWhenFinished = true; }
   }
-  const st = { cur: null, atk: 0, skill: 0, death: false };
+  const st = { cur: null, atk: 0, skill: 0, death: false, run: false };
   const go = (sem, force) => {
     const a = act[sem];
     if (!a) return false;
     if (st.cur === sem && !force) return true;
-    const prev = st.cur && act[st.cur];
+    // st.cur 永远指向当前唯一有权重的动作，切换一定 crossFade 掉它；中途把它置 null 会让旧动作
+    // 停在权重 1 和新动作混着播，表现就是身体抽搐
+    const prev = st.cur && st.cur !== sem ? act[st.cur] : null;
     a.reset();
     if (sem === 'death' || sem === 'attack' || sem === 'skill') a.setLoop(THREE.LoopOnce, 1);
     else a.setLoop(THREE.LoopRepeat, Infinity);
-    if (prev && prev !== a) a.crossFadeFrom(prev, 0.16, false); else a.fadeIn(0.1);
+    if (prev) a.crossFadeFrom(prev, 0.16, false); else a.fadeIn(0.1);
     a.play();
     st.cur = sem;
     return true;
   };
   const old = { frame: sol.onFrame, fade: sol.onFade, kick: sol.kick, reset: sol.reset };
   sol.root.add(src);
-  sol.mesh.visible = false;
   const bodyMat = sol.material;
   const glb = { src, mixer, act, st, kind, k, go };
   sol.glb = glb;
+  // 走统一入口：藏起程序化身体，同时把当前闪烁状态原样交给 GLB 接手
+  sol.setBodyVisible(sol.bodyVisible);
   sol.onFrame = (dt, s) => {
     if (old.frame) old.frame(dt, s);
     // 受击闪光 / 死亡 Blink 都写在程序化材质上，逐帧同步到 GLB 材质
@@ -218,19 +221,21 @@ export function attachBossModel(sol, kind, scaleMul) {
       mm.transparent = bodyMat.transparent || bodyMat.opacity < 1;
       mm.opacity = bodyMat.opacity;
     }
-    if (sol.deadT >= 0) { if (!st.death) { st.death = true; st.atk = 0; st.skill = 0; go('death', true); } }
-    else if (st.death) { st.death = false; st.cur = null; }
-    if (st.atk > 0) { st.atk -= dt; if (st.atk <= 0) st.cur = null; else if (act.attack) go('attack'); }
-    else if (st.skill > 0) { st.skill -= dt; if (st.skill <= 0) st.cur = null; else if (act.skill) go('skill'); }
+    if (sol.deadT >= 0) { if (!st.death) { st.death = true; st.atk = 0; st.skill = 0; st.run = false; go('death', true); } }
+    else if (st.death) st.death = false;
+    if (st.atk > 0) { st.atk -= dt; if (st.atk > 0) go('attack'); }
+    else if (st.skill > 0) { st.skill -= dt; if (st.skill > 0) go('skill'); }
     else if (!st.death) {
-      const sp = s && s.speed || 0;
-      const want = sp > 0.3 && s.onGround ? 'run' : 'idle';
+      const sp = (s && s.speed) || 0;
+      // 迟滞：速度在阈值上下反复横跳时，每帧 crossFadeFrom 会把动画锁死在淡入起点，看着就是模型原地抽搐
+      st.run = sp > (st.run ? 0.35 : 0.7) && !!s.onGround;
+      const want = st.run ? 'run' : 'idle';
       if (go(want) && want === 'run') act.run.setEffectiveTimeScale(THREE.MathUtils.clamp(0.5 + sp * 0.12, 0.6, 1.8));
     }
     mixer.update(dt);
   };
   sol.kick = function () { if (old.kick) old.kick.call(this); st.atk = ATTACK_T; };
-  sol.reset = function () { if (old.reset) old.reset.call(this); st.death = false; st.atk = 0; st.skill = 0; st.cur = null; };
+  sol.reset = function () { if (old.reset) old.reset.call(this); st.death = false; st.atk = 0; st.skill = 0; st.run = false; };
   sol.onFade = (op) => { if (old.fade) old.fade(op); for (const mm of mats) { mm.transparent = true; mm.opacity = op; } };
   return true;
 }
@@ -251,7 +256,7 @@ export function detachBossModel(sol) {
   sol.root.remove(g.src);
   g.src.traverse((o) => { if (o.isMesh && o.material) o.material.dispose(); });   // 材质是每次挂装新建的，几何与贴图共用不能动
   sol.glb = null;
-  sol.mesh.visible = true;
+  sol.setBodyVisible(sol.bodyVisible);
   return true;
 }
 

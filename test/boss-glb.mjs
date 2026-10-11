@@ -11,6 +11,17 @@ import { chromium } from 'playwright-core';
 
 if (!fs.existsSync('assets/models/boss_tyran.glb')) { console.log('SKIP：assets/models 下没有 GLB，接入层无法验证'); process.exit(0); }
 
+// 静态闸门：身体显隐只能走 Soldier.setBodyVisible，任何一处直接写 mesh.visible 都会让
+// GLB 和旧身体同时出现（这就是"两个模型重叠 + 抖动"那次的成因）
+const bodyErrs = [];
+for (const f of ['game.js', 'netplay.js', 'bosslook.js', 'bossmodels.js']) {
+  const src = fs.readFileSync('src/' + f, 'utf8');
+  const n = (src.match(/\bmesh\.visible\s*=/g) || []).length;
+  if (n) bodyErrs.push(f + ' 直接写 mesh.visible ' + n + ' 处');
+}
+if (bodyErrs.length) { bodyErrs.forEach((e) => console.log('FAIL ' + e)); console.log('BOSS GLB 接入回归：0 通过 / 1 失败（显隐入口）'); process.exit(1); }
+console.log('PASS 身体显隐只有 setBodyVisible 一个入口');
+
 const srv = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, PORT: '0', HOST: '127.0.0.1', DEV_SRC: '1' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let port = 0;
 await new Promise((res, rej) => {
@@ -123,6 +134,45 @@ const R = await page.evaluate(async () => {
     shots[k] = renderer.domElement.toDataURL('image/png');
     BL.undressSoldier(sol);
     ok(!sol.glb && sol.mesh.visible === true, k + '：卸装后 GLB 摘除、程序化身体复位');
+    scene.remove(sol.root);
+  }
+  // ---- 双身体与抖动回归 ----
+  // 出生保护/断线幽灵的闪烁过去直接写 mesh.visible，会把已经藏起来的程序化身体重新点亮：
+  // 两只身体叠在同一个位置互相 z-fighting，看上去就是"新模型和旧模型重叠 + 高频抖动"。
+  {
+    const sol = new Soldier('GR');
+    scene.add(sol.root);
+    BL.dressSoldier(sol, 'tyran', false, {});
+    let bad = 0;
+    for (let i = 0; i < 48; i++) {
+      const v = (i % 6) >= 3;                       // 高频翻，等价于 sin(time*30) 那种闪烁
+      sol.setBodyVisible(v);
+      sol.update(1 / 30, { speed: 0, fwd: 0, side: 0, crouch: false, pitch: 0, onGround: true, dead: false, t: i / 30 });
+      if (sol.mesh.visible !== false) bad++;         // 旧身体不许被任何一路翻回来
+      if (sol.glb.src.visible !== v) bad++;          // 闪烁必须落在 GLB 上
+    }
+    ok(bad === 0, '闪烁 48 帧里始终只有一只身体可见（GLB 接手闪烁，旧身体一直藏着）', '违例 ' + bad);
+    BL.undressSoldier(sol);
+    ok(sol.mesh.visible === true, '闪烁中途卸装也要把身体还给程序化网格');
+
+    // 动作切换的抖动：速度在阈值上下反复横跳不能每帧重切 clip，另外动作收尾后只能留一路权重，
+    // 否则旧动作停在权重 1 和 idle 混着播（身体抽搐的另一个来源）
+    BL.dressSoldier(sol, 'tyran', false, {});
+    let flips = 0, last = sol.glb.st.cur;
+    for (let i = 0; i < 60; i++) {
+      sol.update(1 / 30, { speed: (i % 2) ? 0.5 : 0.2, fwd: 1, side: 0, crouch: false, pitch: 0, onGround: true, dead: false, t: i / 30 });
+      if (sol.glb.st.cur !== last) { flips++; last = sol.glb.st.cur; }
+    }
+    ok(flips <= 1, '速度在 0.2/0.5 之间抖动时不反复切动作', '切换 ' + flips + ' 次');
+    let runFlips = 0; last = sol.glb.st.cur;
+    for (let i = 0; i < 30; i++) sol.update(1 / 30, { speed: 3.4, fwd: 1, side: 0, crouch: false, pitch: 0, onGround: true, dead: false, t: i / 30 });
+    if (sol.glb.st.cur !== last) runFlips++;
+    ok(runFlips === 1 && sol.glb.st.cur === 'run', '真的跑起来仍然会切到 run', 'cur=' + sol.glb.st.cur);
+    sol.kick();
+    for (let i = 0; i < 40; i++) sol.update(1 / 30, { speed: 0, fwd: 0, side: 0, crouch: false, pitch: 0, onGround: true, dead: false, t: i / 30 });
+    const live = Object.keys(sol.glb.act).filter((k) => sol.glb.act[k].isRunning());
+    ok(sol.glb.st.cur === 'idle' && live.length === 1 && live[0] === 'idle', 'attack 结束后只剩一路动作在播', 'cur=' + sol.glb.st.cur + ' 在播=' + live.join(','));
+    BL.undressSoldier(sol);
     scene.remove(sol.root);
   }
   // 没有 GLB 的种类保持程序化外观

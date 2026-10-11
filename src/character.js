@@ -242,6 +242,15 @@ export class Soldier {
     this.invFrame = -1;
     this.opacity = 1;
     this.flashT = 0;
+    this.glb = null;
+    this.bodyVisible = true;
+  }
+  // 身体显隐只有这一个入口。挂了外部 GLB 身体时，闪烁/幽灵要作用在 GLB 上，程序化身体必须一直藏着，
+  // 否则两只身体重叠在一起互相 z-fighting，远程 BOSS 看起来就是在高频抖动。
+  setBodyVisible(v) {
+    this.bodyVisible = v !== false;
+    if (this.glb) { this.glb.src.visible = this.bodyVisible; this.mesh.visible = false; }
+    else this.mesh.visible = this.bodyVisible;
   }
   setWeapon(id) {
     if (this.gunId === id) return;

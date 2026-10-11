@@ -699,7 +699,7 @@ export class Game {
           const fwd = (a.vel.x * -Math.sin(a.yaw) + a.vel.z * -Math.cos(a.yaw)) / Math.max(0.01, a.speed || 0);
           s.update(dt, { speed: a.speed || 0, fwd, crouch: a.crouch, pitch: a.pitch + a.punchP, onGround: a.onGround, reloading: a.weapon?.reloading });
           // 出生保护闪烁
-          if (!a.isPlayer) s.mesh.visible = !(a.protectT > 0 && Math.sin(this.time * 30) > 0.3);
+          if (!a.isPlayer) s.setBodyVisible(!(a.protectT > 0 && Math.sin(this.time * 30) > 0.3));
         } else {
           a.deadT += dt;
           a.soldier.update(dt, {});
