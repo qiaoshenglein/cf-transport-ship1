@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>运维控制台 · 穿越火线运输船</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel2: #1b2230; --line: #263041; --line2: #33405a;
+    --fg: #d5dbe5; --dim: #8b97a8; --acc: #f5b321; --ok: #3fb37f; --warn: #e08b3a; --bad: #e0574a;
+    --ops: #4fa8d8; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 13px/1.5 "Microsoft YaHei", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header .ttl { font-size: 15px; letter-spacing: .5px; }
+  header .ttl b { color: var(--acc); }
+  .sp { flex: 1; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 5px; vertical-align: -1px; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+  .dot.sse-off { background: var(--warn); box-shadow: 0 0 7px var(--warn); }
+  .dot.off { background: var(--bad); box-shadow: 0 0 7px var(--bad); }
+  .pill { font: 11px/1 var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 999px; padding: 5px 9px; white-space: nowrap; }
+  main { padding: 14px 16px 30px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 9px; margin-bottom: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px 6px; }
+  .kpi .lab { color: var(--dim); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .val { font: 21px/1.25 var(--mono); }
+  .kpi .val u { font-size: 11px; color: var(--dim); text-decoration: none; margin-left: 3px; }
+  .kpi canvas { display: block; width: 100%; height: 20px; opacity: .85; }
+  .kpi.warn .val { color: var(--warn); } .kpi.bad .val { color: var(--bad); } .kpi.good .val { color: var(--ok); }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; align-items: start; }
+  @media (max-width: 1180px) { .cols { grid-template-columns: minmax(0, 1fr); } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .card > h2 { margin: 0; padding: 9px 12px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line); background: var(--panel2); display: flex; align-items: center; gap: 8px; }
+  .card > h2 em { color: var(--dim); font-style: normal; font: 11px var(--mono); }
+  .scroll { max-height: 560px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #rooms { min-width: 1040px; }   /* 窄屏（或手机）横向滚动，而不是把 13 列压成一团糊 */
+  th { position: sticky; top: 0; background: var(--panel2); color: var(--dim); font-weight: 500; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; z-index: 2; }
+  th.s { cursor: pointer; } th.s:hover { color: var(--fg); }
+  td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+  td.nmc { max-width: 250px; overflow: hidden; text-overflow: ellipsis; }   /* 房间名可能很长：截断而不是把整表撑开 */
+  tr.rm td { background: transparent; }
+  tr.rm:hover td { background: #1b2330; }
+  tr.roster > td { background: #10151d; padding: 4px 8px 10px; }
+  .nm { color: var(--fg); font-weight: 600; } .num { font: 12px var(--mono); }
+  .tag { font: 10px/1 var(--mono); border: 1px solid var(--line2); border-radius: 4px; padding: 3px 5px; color: var(--dim); white-space: nowrap; }
+  .tag.pve { color: #ffb0a2; border-color: #6b3b34; } .tag.pvp { color: #a8d0ff; border-color: #34536f; }
+  .tag.play { color: var(--ok); border-color: #2c5c46; } .tag.end { color: var(--dim); }
+  .tag.paused { color: var(--warn); border-color: #6b5127; }
+  .tag.boss { color: #ff87b3; border-color: #6b2c46; } .tag.own { color: var(--acc); border-color: #6b5727; }
+  .tag.bot { color: var(--dim); } .tag.disc { color: var(--bad); border-color: #6b3230; }
+  .hz.bad { color: var(--bad); font-weight: 700; } .ping.bad { color: var(--bad); } .ping.warn { color: var(--warn); }
+  button { font: 11px/1 inherit; white-space: nowrap; color: var(--fg); background: #212a38; border: 1px solid var(--line2); border-radius: 5px; padding: 5px 8px; cursor: pointer; }
+  button:hover { background: #2b3648; border-color: #46566f; }
+  button.danger { color: #ffb4aa; border-color: #6b3230; background: #2a1e1e; }
+  button.danger:hover { background: #3a2624; }
+  button.pri { color: #0d1117; background: var(--acc); border-color: var(--acc); font-weight: 700; }
+  .acts { display: flex; gap: 5px; flex-wrap: wrap; }
+  .logbar { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--panel2); align-items: center; }
+  .logbar select, .logbar input { font: 11px var(--mono); color: var(--fg); background: #10151d; border: 1px solid var(--line2); border-radius: 5px; padding: 5px 6px; min-width: 0; }
+  .logbar input { flex: 1; }
+  .lg { display: flex; gap: 7px; padding: 4px 10px; border-bottom: 1px solid #1a212c; font-size: 12px; }
+  .lg i { color: var(--dim); font: 11px var(--mono); font-style: normal; flex: none; }
+  .lg b { flex: none; width: 34px; font: 10px/1.6 var(--mono); text-transform: uppercase; text-align: center; border-radius: 3px; }
+  .lg.info b { color: var(--dim); background: #1c2431; } .lg.warn b { color: var(--warn); background: #2a2118; } .lg.ops b { color: var(--ops); background: #17252e; }
+  .lg span { word-break: break-word; }
+  .lg.warn span { color: #f0c39a; } .lg.ops span { color: #bfe0f2; }
+  #toast { position: fixed; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 7px; z-index: 9; }
+  #toast div { background: #1f2836; border: 1px solid var(--line2); border-left: 3px solid var(--ok); border-radius: 6px; padding: 9px 13px; max-width: 360px; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+  #toast div.err { border-left-color: var(--bad); }
+  .empty { padding: 22px; color: var(--dim); text-align: center; }
+  #login { display: none; } #login.on { display: block; }
+  #login .box { max-width: 420px; margin: 40px auto; background: var(--panel); border: 1px solid var(--line2); border-radius: 9px; padding: 20px 22px; }
+  #login h3 { margin: 0 0 6px; } #login p { color: var(--dim); margin: 0 0 14px; }
+  #login input { width: 100%; font: 14px var(--mono); padding: 9px 10px; background: #10151d; color: var(--fg); border: 1px solid var(--line2); border-radius: 6px; margin-bottom: 10px; }
+  .foot { color: #5f6b7c; font-size: 11px; margin-top: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="ttl">穿越火线 · 运输船 <b>运维控制台</b></div>
+  <span class="pill"><span class="dot" id="dot"></span><span id="linkTxt">连接中</span></span>
+  <span class="pill" id="pUp">运行 —</span>
+  <span class="pill" id="pProc">—</span>
+  <span class="pill" id="pProto">协议 —</span>
+  <div class="sp"></div>
+  <button id="btnFreeze">暂停推送</button>
+  <button id="btnRefresh">立即刷新</button>
+</header>
+
+<div id="login"><div class="box">
+  <h3>需要后台口令</h3>
+  <p>服务端设置了 ADMIN_TOKEN，数据接口在未登录时返回 404。</p>
+  <input type="password" id="tok" placeholder="粘贴 ADMIN_TOKEN 口令" autocomplete="off">
+  <button class="pri" id="btnTok">登录</button>
+  <p id="tokErr" style="color:var(--bad);margin-top:10px"></p>
+</div></div>
+
+<main id="main">
+  <div class="kpis" id="kpis"></div>
+  <div class="cols">
+    <div class="card">
+      <h2>房间 <em id="roomCnt"></em></h2>
+      <div class="scroll"><table id="rooms"></table></div>
+    </div>
+    <div class="card">
+      <h2>事件流水 <em id="logCnt"></em></h2>
+      <div class="logbar">
+        <select id="lv"><option value="">全部</option><option value="info">info</option><option value="warn">warn</option><option value="ops">ops</option></select>
+        <input id="q" placeholder="过滤关键字">
+        <label style="font-size:11px;color:var(--dim);white-space:nowrap"><input type="checkbox" id="auto" checked> 置顶</label>
+      </div>
+      <div class="scroll" id="logs" style="max-height:520px"></div>
+    </div>
+  </div>
+  <div class="foot">指标口径：tick 为服务端权威 30Hz 的实际达成率；事件循环延迟涨而 CPU 不满，通常是某个 tick 里同步建图或批量寻路。运维动作只走暂停 / 重开 / 公告 / 清机器人 / 踢人 / 关房，战斗数值一律改配置后重启。</div>
+</main>
+<div id="toast"></div>
+
+<script>
+(function () {
+  var S = null, LOGS = [], open = {}, sortK = 'id', sortD = 1, freeze = false, es = null, pollIv = null, errN = 0;
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  var hhmmss = function (ts) { var d = new Date(ts); function p(n) { return (n < 10 ? '0' : '') + n; } return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); };
+  // 表格里要短（一列宽不了），顶部运行时长用长格式
+  var dur = function (s) {
+    s = Math.max(0, s | 0);
+    if (s < 60) return s + 's';
+    if (s < 3600) return ((s / 60) | 0) + 'm' + (s % 60 < 10 ? '0' : '') + (s % 60) + 's';
+    return ((s / 3600) | 0) + 'h' + (((s % 3600) / 60) | 0) + 'm';
+  };
+  var durLong = function (s) {
+    s = Math.max(0, s | 0);
+    var h = (s / 3600) | 0, m = ((s % 3600) / 60) | 0;
+    return (h ? h + ' 时 ' : '') + m + ' 分 ' + (s % 60) + ' 秒';
+  };
+  var fmtLeft = function (s) {
+    s = Math.max(0, s | 0);
+    return ((s / 60) | 0) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+  };
+
+  // ---------- KPI ----------
+  var CARDS = [
+    { lab: '在线真人', u: '人', v: function (s) { return s.net.humans; }, spark: 'w' },
+    { lab: 'WebSocket', u: '连', v: function (s) { return s.net.ws; }, spark: 'w' },
+    { lab: '房间 / 上限', u: '', v: function (s) { return s.net.rooms + ' / ' + s.net.maxRooms; }, cls: function (s) { return s.net.rooms >= s.net.maxRooms ? 'bad' : ''; } },
+    { lab: '机器人', u: '', v: function (s) { return s.net.bots; } },
+    { lab: '存活怪物', u: '', v: function (s) { return s.net.mons; } },
+    { lab: '消息 / 秒', u: '', v: function (s) { return s.net.mpsec; }, spark: 'm', cls: function (s) { return s.net.mpsec > 4000 ? 'warn' : ''; } },
+    { lab: '进程 CPU', u: '%', v: function (s) { return s.proc.cpu.toFixed(1); }, spark: 'c', cls: function (s) { return s.proc.cpu > 85 ? 'bad' : s.proc.cpu > 55 ? 'warn' : ''; } },
+    { lab: '常驻内存', u: 'MB', v: function (s) { return s.proc.rss; }, spark: 'r' },
+    { lab: '堆已用', u: 'MB', v: function (s) { return s.proc.heap + ' / ' + s.proc.heapMax; } },
+    { lab: '事件循环延迟', u: 'ms', v: function (s) { return s.proc.lag; }, spark: 'l', cls: function (s) { return s.proc.lag > 150 ? 'bad' : s.proc.lag > 60 ? 'warn' : 'good'; } },
+    { lab: '延迟峰值', u: 'ms', v: function (s) { return s.proc.lagMax; }, cls: function (s) { return s.proc.lagMax > 400 ? 'bad' : s.proc.lagMax > 150 ? 'warn' : ''; } },
+    { lab: '重连票据', u: '', v: function (s) { return s.net.tickets; } },
+  ];
+  function spark(cv, arr, color) {
+    var g = cv.getContext('2d'), w = cv.width = Math.max(0, cv.clientWidth * 2), h = cv.height = 40;
+    if (!w) return;                                  // 卡片还没排上布局（宽 0）就别画，否则整条 KPI 报错
+    g.clearRect(0, 0, w, h);
+    if (!arr || arr.length < 2) return;
+    var lo = Math.min.apply(null, arr), hi = Math.max.apply(null, arr);
+    if (hi === lo) { hi = lo + 1; }
+    g.strokeStyle = color; g.lineWidth = 2; g.beginPath();
+    for (var i = 0; i < arr.length; i++) {
+      var x = i / (arr.length - 1) * (w - 2) + 1, y = h - 3 - (arr[i] - lo) / (hi - lo) * (h - 8);
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    }
+    g.stroke();
+    g.lineTo(w - 1, h); g.lineTo(0, h); g.closePath(); g.globalAlpha = .13; g.fillStyle = color; g.fill(); g.globalAlpha = 1;
+  }
+  function renderKpi() {
+    var box = $('kpis');
+    if (!S) return;
+    if (box.childElementCount !== CARDS.length) {
+      box.innerHTML = CARDS.map(function (c, i) {
+        return '<div class="kpi" data-i="' + i + '"><div class="lab">' + esc(c.lab) + '</div><div class="val"></div>' + (c.spark ? '<canvas></canvas>' : '') + '</div>';
+      }).join('');
+    }
+    var cols = { r: '#4fa8d8', c: '#f5b321', l: '#e0574a', m: '#3fb37f', w: '#a88cf0' };
+    Array.prototype.forEach.call(box.children, function (el, i) {
+      var c = CARDS[i];
+      el.className = 'kpi' + (c.cls ? ' ' + c.cls(S) : '');
+      el.querySelector('.val').innerHTML = esc(c.v(S)) + (c.u ? '<u>' + esc(c.u) + '</u>' : '');
+      var cv = el.querySelector('canvas');
+      if (cv && c.spark) {
+        var key = c.spark;
+        var arr = (S.hist || []).map(function (p) { return p[key] || 0; });
+        spark(cv, arr, cols[key] || '#8b97a8');
+      }
+    });
+    $('pUp').textContent = '运行 ' + durLong(S.proc.up);
+    $('pProc').textContent = 'PID ' + S.proc.pid + ' · node ' + S.proc.node;
+    $('pProto').textContent = '协议 v' + S.net.proto + ' · 开放房 ' + S.net.open + ' · IP ' + S.net.ips;
+  }
+
+  // ---------- 房间与名册 ----------
+  function stateTag(r) {
+    if (r.paused) return '<span class="tag paused">运维暂停</span>';
+    return r.state === 'play' ? '<span class="tag play">进行中</span>' : '<span class="tag end">结算中</span>';
+  }
+  // ping 是运维最先该看见的东西：掉线与高延迟标色，别让人去心算
+  function pings(p) { return !p.online ? ' bad' : p.ping > 180 ? ' bad' : p.ping > 100 ? ' warn' : ''; }
+  function roster(r) {
+    if (!r.players.length) return '<div class="empty">房间里还没有人</div>';
+    var ps = r.players.slice().sort(function (a, b) {
+      var k = sortK, x = a[k], y = b[k];
+      if (k === 'name') return sortD * String(x).localeCompare(String(y), 'zh');
+      if (x !== y) return sortD * (x < y ? -1 : 1);
+      return a.id - b.id;
+    });
+    // 真人排前面：运维要盯的是人，机器人只是背景
+    ps.sort(function (a, b) { return (a.bot ? 1 : 0) - (b.bot ? 1 : 0); });
+    var head = [['name', '玩家'], ['team', '阵营'], ['', '身份'], ['ping', 'ping'], ['hp', '生命'], ['armor', '护甲'], ['k', 'K'], ['d', 'D'], ['hs', '爆头'], ['acc', '命中率'], ['wp', '武器'], ['', '操作']];
+    var rows = ps.map(function (p) {
+      var tags = [];
+      if (p.bot) tags.push('<span class="tag bot">机器人</span>');
+      if (p.boss) tags.push('<span class="tag boss">BOSS 附身</span>');
+      if (p.owner) tags.push('<span class="tag own">房主</span>');
+      if (!p.online) tags.push('<span class="tag disc">掉线留席</span>');
+      if (!tags.length) tags.push('<span class="tag">在线</span>');
+      return '<tr><td class="nm">' + esc(p.name) + ' <span class="num" style="color:var(--dim)">#' + p.id + '</span></td>'
+        + '<td>' + esc(p.team) + '</td><td>' + tags.join(' ') + '</td>'
+        + '<td class="num ping' + pings(p) + '" data-ping="' + p.ping + '">' + (p.online ? p.ping : '—') + '</td>'
+        + '<td class="num">' + p.hp + '</td><td class="num">' + p.armor + '</td>'
+        + '<td class="num">' + p.k + '</td><td class="num">' + p.d + '</td><td class="num">' + p.hs + '</td>'
+        + '<td class="num">' + p.acc + '%</td><td class="num">' + esc(p.wp || '—') + '</td>'
+        + '<td>' + (p.bot ? '<button data-a="kickp" data-rid="' + esc(r.id) + '" data-pid="' + p.id + '">移除</button>'
+          : '<button class="danger" data-a="kick" data-rid="' + esc(r.id) + '" data-pid="' + p.id + '" data-nm="' + esc(p.name) + '">踢出</button>') + '</td></tr>';
+    }).join('');
+    var th = head.map(function (h) {
+      return '<th' + (h[0] ? ' class="s" data-k="' + h[0] + '"' : '') + '>' + esc(h[1]) + (h[0] === sortK ? (sortD > 0 ? ' ↑' : ' ↓') : '') + '</th>';
+    }).join('');
+    return '<table><thead><tr>' + th + '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  function renderRooms() {
+    var t = $('rooms');
+    if (!S) return;
+    $('roomCnt').textContent = S.rooms.length + ' 房 · 真人 ' + S.net.humans + ' · 机器人 ' + S.net.bots + ' · 怪 ' + S.net.mons;
+    if (!S.net.rooms) { t.innerHTML = '<tbody><tr><td class="empty">当前没有房间。开局或建房后会自动出现。</td></tr></tbody>'; return; }
+    var head = ['房间', '地图', '模式', '状态', '人数', '机器人', '怪', '波次', '剩余', '比分', 'tick', '运行', '操作'];
+    var rows = S.rooms.map(function (r) {
+      var sc = r.mode === 'pve'
+        ? '清 <b class="num">' + (r.score ? r.score.BL : 0) + '</b> · 亡 <b class="num">' + (r.score ? r.score.GR : 0) + '</b>'
+        : '<b class="num">' + r.bl + '</b> : <b class="num">' + r.gr + '</b> <span style="color:var(--dim)">/' + r.goal + '</span>';
+      var hzOk = typeof r.hz === 'number';                 // 首帧还没第二次采样：算不出来，不该报警
+      var hzCls = (r.paused || !hzOk || (!r.on && !r.bots)) ? '' : (r.hz < 25 ? ' bad' : '');
+      var acts = '<div class="acts">'
+        + '<button data-a="' + (r.paused ? 'resume' : 'pause') + '" data-rid="' + esc(r.id) + '">' + (r.paused ? '恢复' : '暂停') + '</button>'
+        + '<button data-a="reset" data-rid="' + esc(r.id) + '" data-nm="' + esc(r.name) + '">重开</button>'
+        + '<button data-a="notice" data-rid="' + esc(r.id) + '">公告</button>'
+        + '<button data-a="bots" data-rid="' + esc(r.id) + '">清机器人</button>'
+        + '<button class="danger" data-a="close" data-rid="' + esc(r.id) + '" data-nm="' + esc(r.name) + '">关房</button>'
+        + '</div>';
+      var boss = r.monBoss ? ' <span class="tag boss">' + esc(r.monBoss) + '</span>' : '';
+      var who = r.n + ' / ' + r.max + ' <span style="color:var(--dim)">· 在线 ' + r.on + (r.off ? ' · 掉线 ' + r.off : '') + (r.sp ? ' · 观战 ' + r.sp : '') + '</span>';
+      var one = '<tr class="rm" data-open="' + esc(r.id) + '">'
+        + '<td class="nmc" title="' + esc(r.name) + ' # ' + esc(r.id) + '"><span class="nm">' + esc(r.name) + '</span> <span class="num" style="color:var(--dim)">#' + esc(r.id) + '</span></td>'
+        + '<td>' + esc(r.map) + '</td>'
+        + '<td><span class="tag ' + (r.mode === 'pve' ? 'pve' : 'pvp') + '">' + (r.mode === 'pve' ? 'PVE ' + esc(r.diff || '') : '对战') + '</span></td>'
+        + '<td>' + stateTag(r) + '</td>'
+        + '<td class="num">' + who + '</td>'
+        + '<td class="num">' + r.bots + '</td>'
+        + '<td class="num">' + r.mon + boss + '</td>'
+        + '<td class="num">' + (r.mode === 'pve' ? r.wave : '—') + '</td>'
+        + '<td class="num">' + (r.state === 'play' && !r.paused ? fmtLeft(r.timeLeft) : '—') + '</td>'
+        + '<td class="num">' + sc + '</td>'
+        + '<td class="num hz' + hzCls + '">' + (r.paused ? '停' : hzOk ? r.hz + 'Hz' : '—') + '</td>'
+        + '<td class="num">' + dur(r.up) + '</td>'
+        + '<td>' + acts + '</td></tr>';
+      // 展开态：名册单独一行，点房间行切换
+      var two = open[r.id] ? '<tr class="roster"><td colspan="13">' + roster(r) + '</td></tr>' : '';
+      return one + two;
+    }).join('');
+    t.innerHTML = '<thead><tr>' + head.map(function (h) { return '<th>' + esc(h) + '</th>'; }).join('') + '</thead><tbody>' + rows + '</tbody>';
+  }
+
+  // ---------- 日志 ----------
+  function addLog(e) {
+    LOGS.unshift(e);
+    while (LOGS.length > 400) LOGS.pop();
+    renderLogs();
+  }
+  function renderLogs() {
+    var lv = $('lv').value, q = $('q').value.trim().toLowerCase();
+    var list = LOGS.filter(function (e) {
+      return (!lv || e.lv === lv) && (!q || String(e.m).toLowerCase().indexOf(q) >= 0);
+    });
+    $('logCnt').textContent = list.length + ' / ' + LOGS.length + ' 条';
+    $('logs').innerHTML = list.length
+      ? list.map(function (e) {
+        return '<div class="lg ' + esc(e.lv) + '"><i>' + hhmmss(e.ts) + '</i><b>' + esc(e.lv) + '</b><span>' + esc(e.m) + '</span></div>';
+      }).join('')
+      : '<div class="empty">暂无匹配日志</div>';
+    if ($('auto').checked) $('logs').scrollTop = 0;
+  }
+
+  // ---------- 提示 ----------
+  function toast(msg, isErr) {
+    var d = document.createElement('div');
+    if (isErr) d.className = 'err';
+    d.textContent = msg;
+    $('toast').appendChild(d);
+    setTimeout(function () { d.remove(); }, isErr ? 5200 : 2800);
+  }
+
+  // ---------- 动作 ----------
+  function doAct(o) {
+    fetch('/api/console/action', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify(o),
+    }).then(function (r) {
+      return r.json().then(function (j) { return { code: r.status, j: j }; });
+    }).then(function (res) {
+      toast(res.j.err || (res.j.ok || '已执行'), !!res.j.err);
+      if (!res.j.err) refresh();
+    }).catch(function (e) { toast('动作发送失败：' + e.message, true); });
+  }
+
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('button[data-a],th.s,tr.rm') : null;
+    if (!b) return;
+    var rid = b.getAttribute('data-rid'), nm = b.getAttribute('data-nm'), a = b.getAttribute('data-a');
+    if (b.tagName === 'TR') {                 // 点房间行 = 展开/收起名册
+      var id = b.getAttribute('data-open');
+      if (ev.target.closest('button')) return;
+      open[id] = !open[id]; renderRooms(); return;
+    }
+    if (b.tagName === 'TH') {                 // 名册表头排序
+      var k = b.getAttribute('data-k');
+      if (sortK === k) sortD = -sortD; else { sortK = k; sortD = k === 'name' || k === 'ping' ? 1 : -1; }
+      renderRooms(); return;
+    }
+    if (a === 'kick' || a === 'kickp') {
+      var pid = +b.getAttribute('data-pid');
+      var isBot = a === 'kickp';
+      if (!confirm(isBot ? '移除这个机器人？' : '把「' + nm + '」踢出房间？对方客户端会直接回到大厅。')) return;
+      doAct({ a: 'kick', rid: rid, pid: pid }); return;
+    }
+    if (a === 'close') {
+      if (!confirm('关闭房间「' + nm + '」？里面所有人（含观战）都会被请回大厅，且无法撤销。')) return;
+      doAct({ a: 'close', rid: rid }); return;
+    }
+    if (a === 'reset') {
+      if (!confirm('重开一轮？比分、时限与波次进度立即归零。')) return;
+      doAct({ a: 'reset', rid: rid }); return;
+    }
+    if (a === 'bots') { doAct({ a: 'bots', rid: rid }); return; }
+    if (a === 'notice') {
+      var m = prompt('向该房间所有人播一条公告（80 字内）：', '维护提醒：本房稍后重置');
+      if (m === null) return;
+      doAct({ a: 'notice', rid: rid, m: m }); return;
+    }
+    doAct({ a: a, rid: rid });
+  });
+
+  // ---------- 数据通道 ----------
+  function setLink(mode) {
+    var d = $('dot');
+    d.className = 'dot' + (mode === 'sse' ? ' on' : mode === 'poll' ? ' sse-off' : mode === 'off' ? ' off' : '');
+    $('linkTxt').textContent = mode === 'sse' ? '实时推送' : mode === 'poll' ? '轮询降级' : mode === 'off' ? '连接断开' : '连接中';
+  }
+  function apply(s) {
+    if (freeze) return;
+    S = s; renderKpi(); renderRooms();
+    if (s.logs && !LOGS.length) { LOGS = s.logs.slice().reverse(); renderLogs(); }
+  }
+  function refresh() {
+    fetch('/api/console/state', { credentials: 'same-origin' }).then(function (r) {
+      // 设了 ADMIN_TOKEN 又没登录时，数据接口一律 404（连后台存在都不透露）→ 弹口令面板
+      if (r.status === 404) { $('login').classList.add('on'); setLink('off'); return; }
+      if (!r.ok) { setLink('off'); return; }
+      $('login').classList.remove('on');
+      return r.json().then(apply);
+    }).catch(function () { setLink('off'); });
+  }
+  function stream() {
+    if (!window.EventSource) { startPoll(); return; }
+    es = new EventSource('/api/console/stream');
+    es.addEventListener('hello', function (e) { setLink('sse'); errN = 0; apply(JSON.parse(e.data)); });
+    es.addEventListener('tick', function (e) { setLink('sse'); errN = 0; apply(JSON.parse(e.data)); });
+    es.addEventListener('log', function (e) { addLog(JSON.parse(e.data)); });
+    es.onerror = function () {
+      if (++errN < 3) return;                       // 容忍偶发抖动，EventSource 自己会重连
+      setLink('off');
+      if (es) { es.close(); es = null; }
+      startPoll();                                  // 反代吃掉 SSE（缓冲/超时）就退回轮询，后台不能瞎
+    };
+  }
+  function startPoll() {
+    if (pollIv) return;
+    setLink('poll');
+    pollIv = setInterval(function () {
+      fetch('/api/console/state', { credentials: 'same-origin' }).then(function (r) {
+        return r.ok ? r.json() : null;
+      }).then(function (j) { if (j) { setLink('poll'); apply(j); } }).catch(function () { setLink('off'); });
+    }, 2000);
+  }
+
+  // ---------- 控件 ----------
+  $('btnRefresh').onclick = function () { refresh(); toast('已刷新'); };
+  $('btnFreeze').onclick = function () {
+    freeze = !freeze;
+    this.textContent = freeze ? '继续推送' : '暂停推送';
+    this.classList.toggle('pri', freeze);
+  };
+  $('lv').onchange = renderLogs;
+  $('q').oninput = renderLogs;
+  $('auto').onchange = renderLogs;
+  $('btnTok').onclick = function () {
+    fetch('/admin/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin',
+      body: JSON.stringify({ token: $('tok').value }),
+    }).then(function (r) {
+      return r.json().then(function (j) { return { code: r.status, j: j }; });
+    }).then(function (res) {
+      if (res.j.err) { $('tokErr').textContent = res.j.err; return; }
+      $('tokErr').textContent = ''; $('login').classList.remove('on');
+      toast(res.j.ok || '已登录'); errN = 0;
+      if (pollIv) { clearInterval(pollIv); pollIv = null; }   // 登录后重新回到 SSE 主通道，别停在降级轮询上
+      if (es) { es.close(); es = null; }
+      stream(); refresh();
+    }).catch(function (e) { $('tokErr').textContent = '登录请求失败：' + e.message; });
+  };
+  $('tok').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('btnTok').click(); });
+
+  refresh(); stream();
+})();
+</script>
+</body>
+</html>

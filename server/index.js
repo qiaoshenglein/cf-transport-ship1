@@ -8,15 +8,19 @@ import { fileURLToPath } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { Room } from './room.js';
 import { PROTO_VERSION, RECONNECT_GRACE } from '../src/protocol.js';
+import { initConsole, handle as consoleHandle, logLine, rxTick } from './console.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
 const DIST = path.join(HERE, '..', 'dist', 'index.html');
+const ASSETS = path.join(HERE, '..', 'assets');   // 外部 3D 模型（/assets/models/*.glb），缺失时客户端自动退回程序化外观
 const PORT = +(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_ROOMS = +(process.env.MAX_ROOMS || 32);
+const STARTED_AT = Date.now();
 
-const log = (s) => console.log(`[${new Date().toISOString().slice(11, 19)}] ${s}`);
+// 日志同时进两处：终端（原有习惯）与运维控制台的环形缓冲（实时滚动 + 事后回看）
+const log = (s, lv = 'info') => { console.log(`[${new Date().toISOString().slice(11, 19)}] ${s}`); logLine(s, lv); };
 const cleanName = (n) => String(n == null ? '' : n).replace(/[\u0000-\u001f<>"'\\]/g, '').trim().slice(0, 24);
 
 const rooms = new Map();
@@ -30,13 +34,62 @@ function createRoom(o) {
     name: cleanName(o.name) || '房间',
     goal: o.goal, max: o.max, mode: o.mode, diff: o.diff, map: o.map,
     onEmpty: (r) => { rooms.delete(r.id); log(`房间 ${r.id} 已回收`); },
-    onCheat: (p, kind) => { log(`房间 ${room.id} 疑似作弊 ${kind}：${p.name}(#${p.id})，已暂停其开火 4 秒`); },
+    onCheat: (p, kind) => { log(`房间 ${room.id} 疑似作弊 ${kind}：${p.name}(#${p.id})，已暂停其开火 4 秒`, 'warn'); },
   });
   rooms.set(room.id, room);
   log(`房间 ${room.id} 创建：${room.name}（${room.mapName} / 目标 ${room.goal} / 上限 ${room.max}）`);
   return room;
 }
 const roomList = () => [...rooms.values()].map((r) => r.info());
+
+// ---------------- 运维台动作：请人离席 ----------------
+// 关键：removePlayer 只动房间名册，被移除者自己的连接什么都收不到，会卡在"还在对局里"的假象中。
+// 所以踢人必须显式走 Sess.dropSeat（清席位 + 删重连票据 + 广播 leave），再单独给这条连接发 kicked，
+// 让客户端清掉 ticket、退回大厅并刷新房单。
+function eject(sess, msg) {
+  if (!sess) return false;
+  sess.dropSeat('kicked');
+  sess.send({ t: 'kicked', m: msg });
+  sess.send({ t: 'hi', rooms: roomList() });
+  return true;
+}
+function kick(rid, pid) {
+  const room = rooms.get(String(rid));
+  if (!room) return { err: '房间不存在或已回收' };
+  const p = room.players.get(pid | 0);
+  if (!p) return { err: '这个人不在该房间里（可能已经离开）' };
+  if (p.isBot) {
+    if (!room.removeBot(p.id)) return { err: '机器人移除失败' };
+    log(`运维台移除机器人：房间 ${room.id} ${p.name}(#${p.id})`, 'warn');
+    return { ok: '已移除机器人', note: p.name };
+  }
+  const nm = p.name;
+  if (p.sess) eject(p.sess, '运维控制台已将你移出房间');
+  else room.removePlayer(p, 'kicked');       // 连接已断且席位被回收后的兜底：只清名册
+  log(`运维台踢人：房间 ${room.id} ${nm}(#${p.id})`, 'warn');
+  return { ok: '已踢出 ' + nm, note: nm };
+}
+function closeRoom(rid) {
+  const room = rooms.get(String(rid));
+  if (!room) return { err: '房间不存在或已回收' };
+  const nm = room.name, n = room.players.size, sp = room.spectators.size;
+  for (const p of [...room.players.values()]) {
+    if (p.isBot) { room.removePlayer(p, 'kicked'); continue; }
+    if (p.sess) eject(p.sess, '运维控制台已关闭该房间');
+    else room.removePlayer(p, 'kicked');
+  }
+  for (const s of [...room.spectators.values()]) {
+    const sess = s.sess;
+    if (!sess) continue;
+    sess.dropSpect();
+    sess.send({ t: 'kicked', m: '运维控制台已关闭该房间' });
+    sess.send({ t: 'hi', rooms: roomList() });
+  }
+  room.stop();
+  rooms.delete(room.id);
+  log(`运维台关闭房间 ${room.id}「${nm}」（清退 ${n} 人 / ${sp} 观战）`, 'warn');
+  return { ok: '房间已关闭', note: nm };
+}
 
 class Sess {
   constructor(ws, ip) {
@@ -220,12 +273,36 @@ function indexPage() {
     return cachedPage;
   } catch (e) { return null; }
 }
+const MIME = { '.glb': 'model/gltf-binary', '.gltf': 'model/gltf+json', '.bin': 'application/octet-stream', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json' };
+const assetCache = new Map(); // 绝对路径 -> { buf, tag }
+function assetFile(u) {
+  const fp = path.normalize(path.join(ASSETS, u.slice('/assets/'.length)));
+  if (!fp.startsWith(ASSETS + path.sep) && fp !== ASSETS) return null;      // 目录穿越防护
+  const ext = path.extname(fp).toLowerCase();
+  if (!MIME[ext]) return null;
+  let st;
+  try { st = fs.statSync(fp); } catch (e) { return null; }
+  const tag = '"' + st.size.toString(36) + '-' + Math.round(st.mtimeMs).toString(36) + '"';
+  let hit = assetCache.get(fp);
+  if (!hit || hit.tag !== tag) hit = { buf: fs.readFileSync(fp), tag };
+  assetCache.set(fp, hit);
+  return hit;
+}
 const server = http.createServer((req, res) => {
   const u = (req.url || '/').split('?')[0];
+  if (consoleHandle(req, res, u)) return;              // /admin 与 /api/console/*（详见 server/console.js）
   if (u === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
   if (u === '/api/rooms') { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); return res.end(JSON.stringify(roomList())); }
-  // 开发模式：直接以 ES 模块方式提供源码（测试 / 调试用，生产不启用）
-  if (process.env.DEV_SRC === '1' && (u.startsWith('/src/') || u.startsWith('/server/') || u.startsWith('/test/') || /^\/vendor\/[\w.]+\.js$/.test(u) || /^\/addons\/[\w/.-]+\.js$/.test(u))) {
+  if (u.startsWith('/assets/')) {
+    const a = assetFile(u);
+    if (!a) { res.writeHead(404, { 'content-type': 'text/plain' }); return res.end('not found'); }   // 客户端拿不到就走程序化外观兜底
+    const mime = MIME[path.extname(u.split('?')[0]).toLowerCase()];
+    if ((req.headers['if-none-match'] || '') === a.tag) { res.writeHead(304, { etag: a.tag }); return res.end(); }
+    res.writeHead(200, { 'content-type': mime, 'content-length': a.buf.length, etag: a.tag, 'cache-control': 'no-cache' });
+    return res.end(a.buf);
+  }
+  // 开发模式：直接以 ES 模块方式提供源码（测试 / 调试 / tools 资产工作台用，生产不启用）
+  if (process.env.DEV_SRC === '1' && (u.startsWith('/src/') || u.startsWith('/server/') || u.startsWith('/test/') || u.startsWith('/tools/') || /^\/vendor\/[\w.]+\.js$/.test(u) || /^\/addons\/[\w/.-]+\.js$/.test(u))) {
     const fp = u.startsWith('/vendor/')
       ? path.join(ROOT, 'node_modules', 'three', 'build', u.slice('/vendor/'.length))
       : u.startsWith('/addons/')
@@ -264,10 +341,11 @@ wss.on('connection', (ws, req) => {
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   ws.on('message', (buf) => {
+    rxTick();
     s.msgs++;
     const now = Date.now();
     if (now - s.msgWin > 1000) { s.msgWin = now; s.msgs = 0; }
-    if (s.msgs > 120) { try { ws.close(1008, 'rate'); } catch (e) { /* 忽略 */ } return; } // 限流
+    if (s.msgs > 120) { log(`${s.name}(${ip}) 消息频率超限，已断开`, 'warn'); try { ws.close(1008, 'rate'); } catch (e) { /* 忽略 */ } return; } // 限流
     let m;
     try { m = JSON.parse(buf.toString()); } catch (e) { return; }
     if (!m || typeof m.t !== 'string') return;
@@ -305,14 +383,19 @@ setInterval(() => {
 }, 15000);
 
 // ---------------- 启动 ----------------
+initConsole({ rooms, tickets, ipConns, wss, proto: PROTO_VERSION, maxRooms: MAX_ROOMS, startedAt: STARTED_AT, kick, closeRoom });
+
 server.listen(PORT, HOST, () => {
   const ips = [];
   for (const nic of Object.values(os.networkInterfaces())) for (const a of nic || {}) if (a.family === 'IPv4' && !a.internal) ips.push(a.address);
+  const port = server.address().port;
   log('穿越火线·运输船 联机服务端已启动');
-  log(`  本机:   http://localhost:${server.address().port}`);
-  for (const ip of ips) log(`  局域网: http://${ip}:${server.address().port}`);
+  log(`  本机:   http://localhost:${port}`);
+  for (const ip of ips) log(`  局域网: http://${ip}:${port}`);
+  log(`  运维台: http://localhost:${port}/admin` + (process.env.ADMIN_TOKEN ? '（已启用 ADMIN_TOKEN 口令校验）'
+    : '（未设 ADMIN_TOKEN：后台无任何验证，请把端口收在内网或经反代加锁）'));
   log(`  协议版本 ${PROTO_VERSION} · 房间上限 ${MAX_ROOMS} · WebSocket 路径 /ws`);
-  if (!fs.existsSync(DIST)) log('  警告：dist/index.html 不存在，请先运行 npm run build');
+  if (!fs.existsSync(DIST)) log('  警告：dist/index.html 不存在，请先运行 npm run build', 'warn');
 });
 
 export { server, wss, rooms };

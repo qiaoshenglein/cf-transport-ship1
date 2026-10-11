@@ -102,7 +102,7 @@ export class Room {
   }
   info() {
     const t = this.teamCount();
-    return { id: this.id, name: this.name, goal: this.goal, max: this.max, n: this.players.size, bl: t.BL, gr: t.GR, sp: this.spectators.size, score: this.score, state: this.state, timeLeft: Math.round(this.timeLeft), owner: this.ownerId, bots: this.botCount(), mode: this.mode, map: this.mapId, mn: this.mapName, wave: this.wave, diff: this.pveDiff, boss: this.mode === 'pve' ? this.bossState() : null };
+    return { id: this.id, name: this.name, goal: this.goal, max: this.max, n: this.players.size, bl: t.BL, gr: t.GR, sp: this.spectators.size, score: this.score, state: this.state, paused: !!this.paused, timeLeft: Math.round(this.timeLeft), owner: this.ownerId, bots: this.botCount(), mode: this.mode, map: this.mapId, mn: this.mapName, wave: this.wave, diff: this.pveDiff, boss: this.mode === 'pve' ? this.bossState() : null };
   }
   // BOSS 现状（AI 血线或真人附身血线），供大厅列表与客户端血条初始值
   bossState() {

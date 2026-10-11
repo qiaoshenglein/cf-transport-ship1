@@ -16,6 +16,7 @@ import { Player } from './player.js';
 import { Bot, BOT_NAMES } from './bots.js';
 import { TouchControls } from './touch.js';
 import { NetGame } from './netplay.js';
+import { preloadBossModels, prewarmBossModels } from './bossmodels.js';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 const MULTI = ['', '', 'DOUBLE KILL', 'TRIPLE KILL', 'MULTI KILL', 'ULTRA KILL', 'RAMPAGE', 'UNSTOPPABLE', 'GODLIKE'];
@@ -72,6 +73,15 @@ export class Game {
     this.lampLights();
     this.renderer.camera.position.set(-20, 12, 30); this.renderer.camera.lookAt(0, 2, 0);
     try { this.renderer.renderer.compile(this.renderer.scene, this.renderer.camera); } catch (e) { /* 忽略 */ }
+    // 外部 BOSS 模型：进场前一次性下完并显示进度（运行时才 fetch 会让 BOSS 登场那一刻变成"半只怪"）
+    this.hud.loading(0.9, '载入 BOSS 模型');
+    await nextFrame();
+    try {
+      await preloadBossModels((p) => this.hud.loading(0.9 + 0.075 * p.frac,
+        p.totMb ? `载入 BOSS 模型 ${Math.min(p.done + 1, p.n)}/${p.n} · ${p.mb.toFixed(1)} / ${p.totMb.toFixed(1)} MB`
+          : `载入 BOSS 模型 ${p.done}/${p.n}`));
+      prewarmBossModels(this.renderer.renderer, this.renderer.scene, this.renderer.camera);
+    } catch (e) { /* 拿不到模型就沿用程序化外观，绝不拦进场 */ }
     this.hud.loading(1, '完成');
     await nextFrame();
     this.hud.show('menu');

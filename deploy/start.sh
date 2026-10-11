@@ -22,6 +22,7 @@ if [ -f "$CONF" ]; then set -a; . "$CONF"; set +a; fi
 export PORT="${PORT:-8080}" HOST="${HOST:-0.0.0.0}"
 [ -n "${MAX_ROOMS:-}" ] && export MAX_ROOMS
 [ -n "${MAX_IP_CONNS:-}" ] && export MAX_IP_CONNS
+[ -n "${ADMIN_TOKEN:-}" ] && export ADMIN_TOKEN
 [ -n "${DEV_SRC:-}" ] && export DEV_SRC
 
 # ---- 确保 node 存在（服务端依赖 node:http + ws，需 Node >= 18）
@@ -44,6 +45,15 @@ fi
 if [ ! -f dist/index.html ]; then
   echo "正在构建前端……"
   npm run build
+fi
+
+# ---- 外部模型（可选）：/assets/models/*.glb 由同一个进程直供，缺了不影响开局，只是 BOSS 仍用程序化外观
+NMODEL=0
+if [ -d "$DIR/assets/models" ]; then NMODEL=$(ls -1 "$DIR/assets/models"/*.glb 2>/dev/null | grep -cv '\.alt\.glb$' || true); fi
+if [ "$NMODEL" = "0" ]; then
+  echo "提示：assets/models 下没有 .glb 模型，BOSS 将继续使用程序化外观；从资产工作台验收后把文件放进这里再重启即可。"
+else
+  echo "外部模型：$NMODEL 个（$(cd "$DIR/assets/models" && ls -1 *.glb 2>/dev/null | grep -v '\.alt\.glb$' | tr '\n' ' ')）"
 fi
 
 port_pid() {
@@ -72,6 +82,10 @@ case "${1:-run}" in
       echo "已在后台启动 · PID $(cat "$PIDF") · 端口 $PORT"
       echo "玩家入口  http://<公网IP>:$PORT/    联机端点  ws://<公网IP>:$PORT/ws"
       echo "健康检查  curl http://127.0.0.1:$PORT/healthz     日志  bash deploy/start.sh --logs"
+      echo "运维后台  http://<公网IP>:$PORT/admin"
+      [ -n "${ADMIN_TOKEN:-}" ] \
+        && echo "          已启用口令校验（deploy/.env 的 ADMIN_TOKEN）" \
+        || echo "          警告：未设 ADMIN_TOKEN，后台无任何验证，谁能连到这个端口谁就能踢人停房；公网部署请在 deploy/.env 里设口令，或把端口收进内网"
       echo "提示：若防火墙/安全组未放行 $PORT，请自行开放（云主机需在安全组添加入方向 TCP）。"
     else
       echo "启动失败，最近日志："; tail -20 "$LOG" 2>/dev/null || true; exit 1

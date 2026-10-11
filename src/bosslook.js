@@ -2,6 +2,7 @@
 // 目的：20~40m 外一眼能认出"这不是人"，并且本体就是光源——地面环预告范围、天光柱标示方位
 import * as THREE from 'three';
 import { SIZE } from './bosssize.js';
+import { attachBossModel, detachBossModel, bossModelReady } from './bossmodels.js';
 
 // 光效贴图按需生成并共享（客户端专用，服务端不会 import 这个文件）
 let TEX_GLOW = null, TEX_BEAM = null;
@@ -298,6 +299,9 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   const mats = set.list, extras = [];
   const parts = accParts(key), pg = primGeos(key, possessed);
   sol.matSet = set; sol.matKey = key; sol.matPoss = !!possessed;
+  // 有真 GLB 身体时不再穿"假装甲"（那是给程序化士兵补轮廓用的），只保留光环/天光柱/地面环这些 FX
+  const glbBody = bossModelReady(key);
+  if (!glbBody)
   for (let i = 0; i < parts.desc.length; i++) {
     const it = parts.desc[i];
     const bone = sol.B[it.b];
@@ -392,10 +396,13 @@ export function dressSoldier(sol, key, possessed, optsIn) {
     if (sol.aura) sol.aura.material.opacity = Math.min(0.26, (0.16 + Math.sin(sol.breathT * 1.8) * 0.07 + p * 0.5) * fd * ld);
     if (sol.crown) { sol.crown.core.rotation.y += dt * 2.6; sol.crown.orbit.rotation.y -= dt * 1.5; }
   };
+  // 最后一步才挂 GLB：attach 会把上面这个 onFrame 包一层（先跑 FX 脉冲，再推 mixer）
+  if (glbBody) attachBossModel(sol, key, possessed ? 1.04 : 1);
 }
 
 export function undressSoldier(sol) {
   if (!sol) return;
+  detachBossModel(sol);
   // 配件只从骨骼上摘下来，几何与材质都是缓存池里的，绝不 dispose（否则下一只同类又要现编译）
   if (sol.extras) {
     for (const m of sol.extras) if (m.parent) m.parent.remove(m);

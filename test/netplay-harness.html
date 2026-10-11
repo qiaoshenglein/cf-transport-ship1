@@ -514,6 +514,38 @@ try {
 
   C.leave();
   B.leave();
+
+  // ---------- 运维台：真实客户端被公告 / 被踢后的落地行为 ----------
+  {
+    await A.connect(); try { sessionStorage.removeItem('cf_ticket'); } catch (e) {} A.helloMsg(); await sleep(300);
+    A.send({ t: 'create', name: '运维用例房', goal: 50, max: 8, primary: 'ak47' });
+    for (let i = 0; i < 40 && !A.inMatch; i++) await sleep(100);
+    ok(A.inMatch, '运维用例：重新建房进对局');
+    const rid = A.room.id, pid = A.myId, tk = A.ticket;
+    const toasts = [];
+    const oldToast = A.g.hud.toast.bind(A.g.hud);
+    A.g.hud.toast = (h, s) => { toasts.push(String(h)); return oldToast(h, s); };
+    const post = (o) => fetch('/api/console/action', { method: 'POST', body: JSON.stringify(o) });
+    try {
+      const rn = await post({ a: 'notice', rid, m: '浏览器用例公告' });
+      ok(rn.status === 200, '公告动作返回 200');
+      for (let i = 0; i < 40 && !toasts.some((t) => /公告/.test(t)); i++) await sleep(100);
+      ok(toasts.some((t) => /运维公告/.test(t) && /浏览器用例公告/.test(t)), '公告经事件通道播成 toast', toasts.slice(-2).join(' | ').slice(0, 120));
+
+      const rk = await post({ a: 'kick', rid, pid });
+      ok(rk.status === 200, '踢人动作返回 200');
+      for (let i = 0; i < 60 && A.inMatch; i++) await sleep(100);
+      ok(!A.inMatch && !A.room, '被踢后客户端自动退出对局并释放房间引用');
+      for (let i = 0; i < 40 && !(A.lobby && !A.lobby.classList.contains('hidden')); i++) await sleep(100);
+      ok(A.state === 'lobby' && !!A.lobby && !A.lobby.classList.contains('hidden'), '被踢者自动回到大厅（不是断线假象）');
+      let tkt = 'x'; try { tkt = sessionStorage.getItem('cf_ticket'); } catch (e) {}
+      ok(!tkt, '本地重连票据已清除，刷新页面不会被自动请回原房间', `旧票=${tk} 现值=${tkt}`);
+      ok(!!A.ws && A.ws.readyState === 1, '连接仍然活着：踢人是"请出房间"而不是断网');
+      ok(toasts.some((t) => /移出|运维/.test(t)), '被踢时给出明确原因提示', toasts.slice(-1)[0] || '');
+      A.g.hud.toast = oldToast;
+    } catch (e) { ok(false, '运维台用例', String(e).slice(0, 200)); A.g.hud.toast = oldToast; }
+  }
+
   drv.forEach(clearInterval);
 } catch (e) {
   say('FATAL ' + (e && e.stack || e)); F++;

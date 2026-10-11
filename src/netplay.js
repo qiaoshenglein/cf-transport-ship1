@@ -11,6 +11,7 @@ import { audio } from './audio.js';
 import { SUPPLY_NAME } from './supplies.js';
 import { MAPS, MAP_IDS, mapName, suppliesForMap } from './maps.js';
 import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, bossLod, prewarmBossFx, BOSS_TINT } from './bosslook.js';
+import { preloadBossModels, prewarmBossModels, bossModelReady, bossAnim } from './bossmodels.js';
 
 const DT = 1 / TICK_RATE;
 const PVE_DIFF_CN = { easy: '轻松', normal: '普通', hard: '困难', hell: '炼狱' };
@@ -125,6 +126,15 @@ export class NetGame {
         if (this.inMatch) this.banner(m.m);
         else this.setStatus(m.m);
         this.g.hud.toast(m.m, 3);
+        break;
+      // 运维台踢人 / 关房：连接还活着，只是席位被服务端清掉，所以本地回大厅但不断线
+      case 'kicked':
+        this.manualLeave = true;
+        try { sessionStorage.removeItem('cf_ticket'); } catch (e) { /* 忽略 */ }
+        this.leaveMatch();
+        this.manualLeave = false;
+        this.g.hud.toast('<b style="color:#ff8a7a">' + esc(m.m || '你已被运维移出房间') + '</b>', 5);
+        this.openLobby();
         break;
     }
   }
@@ -247,7 +257,7 @@ export class NetGame {
     if (!this.roomList) return;
     if (!list.length) { this.roomList.innerHTML = '<div class="note">暂无房间：点击「创建房间」或「快速匹配」开战。</div>'; return; }
     this.roomList.innerHTML = list.map((r) => `
-      <div class="roomRow"><b>${esc(r.name)}</b><span class="rm">${r.mn ? `<em class="maptag">${esc(r.mn)}</em>` : ''}${r.mode === 'pve' ? `<em class="pvetag">PVE ${esc(PVE_DIFF_CN[r.diff] || '普通')} · 第 ${(r.wave || 0) + 1} 波</em>${r.boss ? `<em class="pvetag">⚠ ${esc(r.boss.nm)}${r.boss.by ? ' · 玩家附身' : ''}</em>` : ''} ` : ''}${r.n}/${r.max} 人${r.sp ? ` · 观战 ${r.sp}` : ''} · ${r.mode === 'pve' ? `已清除 <i>${r.score ? r.score.BL : 0}</i> 只 · 阵亡 <i>${r.score ? r.score.GR : 0}</i>` : `潜伏 <i>${r.bl}</i>:<i>${r.gr}</i> 保卫 · 目标 ${r.goal}`} · ${r.state === 'play' ? `剩 ${Math.round(r.timeLeft)}s` : '结算中'}</span><button class="jin" data-rid="${esc(r.id)}">加入</button><button class="jin spectbtn" data-rid="${esc(r.id)}">观战</button></div>`).join('');
+      <div class="roomRow"><b>${esc(r.name)}</b><span class="rm">${r.mn ? `<em class="maptag">${esc(r.mn)}</em>` : ''}${r.mode === 'pve' ? `<em class="pvetag">PVE ${esc(PVE_DIFF_CN[r.diff] || '普通')} · 第 ${(r.wave || 0) + 1} 波</em>${r.boss ? `<em class="pvetag">⚠ ${esc(r.boss.nm)}${r.boss.by ? ' · 玩家附身' : ''}</em>` : ''} ` : ''}${r.n}/${r.max} 人${r.sp ? ` · 观战 ${r.sp}` : ''} · ${r.mode === 'pve' ? `已清除 <i>${r.score ? r.score.BL : 0}</i> 只 · 阵亡 <i>${r.score ? r.score.GR : 0}</i>` : `潜伏 <i>${r.bl}</i>:<i>${r.gr}</i> 保卫 · 目标 ${r.goal}`} · ${r.state === 'play' ? `剩 ${Math.round(r.timeLeft)}s` : r.paused ? '运维暂停' : '结算中'}</span><button class="jin" data-rid="${esc(r.id)}">加入</button><button class="jin spectbtn" data-rid="${esc(r.id)}">观战</button></div>`).join('');
     for (const b of this.roomList.querySelectorAll('button.jin')) b.addEventListener('click', () => {
       this.saveName();
       const spect = b.classList.contains('spectbtn');
@@ -288,7 +298,7 @@ export class NetGame {
     if (this.lobby) this.lobby.classList.add('hidden');
     this.room = w.room; this.myId = w.you; this.ticket = w.ticket || this.ticket;
     this.ensureLamp();                                     // 先备好 BOSS 灯，换装时直接挂上
-    if (w.room.mode === 'pve') prewarmBossFx(g.renderer.renderer, g.renderer.scene, g.renderer.camera);   // 加载期编好 BOSS 着色器，登场零编译
+    if (w.room.mode === 'pve') this.prewarmPve();   // 加载期把 BOSS 着色器与外部模型都备好，登场零编译
     this.isHost = w.room.owner === w.you;
     this.state = 'play'; this.inMatch = true; this.manualLeave = false;
     this.spectate = false; this.specTab = false; this.boardShown = false;
@@ -331,6 +341,20 @@ export class NetGame {
       this.pn++; this.pings.set(this.pn, performance.now() / 1000);
       this.send({ t: 'ping', c: this.pn, r: this.rtt });
     }, 600);
+  }
+  // PVE 进场就把"程序化 BOSS 材质 + 外部 GLB 模型"都预载预编译好：登场那一帧现编译会卡全客户端（实测首帧 178ms）
+  prewarmPve() {
+    const g = this.g;
+    prewarmBossFx(g.renderer.renderer, g.renderer.scene, g.renderer.camera);
+    preloadBossModels().then(() => {
+      prewarmBossModels(g.renderer.renderer, g.renderer.scene, g.renderer.camera);
+      // 模型比第一只 BOSS 晚到也没关系：到货后给场上已换装的 BOSS 补挂一次
+      for (const a of this.remotes.values()) {
+        const s = a.soldier;
+        if (!s || !s.lookKey || s.glb || !bossModelReady(s.lookKey)) continue;
+        dressSoldier(s, s.lookKey, s.possessed, this.lookOpts());
+      }
+    });
   }
   // 全场一盏 BOSS 灯：光源数量恒定，登场时只换颜色和位置，不触发着色器重编译；低画质直接不给
   ensureLamp() {
@@ -408,7 +432,7 @@ export class NetGame {
     g.hud.show(null);
     this.room = m.room;                                   // 观战也要知道房间模式（补给站 / BOSS 血条）
     this.ensureLamp();
-    if (m.room.mode === 'pve') prewarmBossFx(g.renderer.renderer, g.renderer.scene, g.renderer.camera);   // 观战同样会在场上看到 BOSS，先编好
+    if (m.room.mode === 'pve') this.prewarmPve();   // 观战同样会在场上看到 BOSS，先编好
     for (const r of m.roster) this.ensureRemote(r);
     this.supMask = m.sup || 0; this.dp = m.dp || [];
     for (const r of m.roster) if (r.boss) this.boss = { id: r.id, nm: r.boss === 2 ? (r.bnm || r.name) : r.name, hp: r.hp, hpMax: r.hpMax, by: r.boss === 2 ? 1 : 0, who: r.boss === 2 ? r.name : '' };
@@ -774,6 +798,7 @@ export class NetGame {
       case 'leave': g.hud.toast(`${esc(e.name)} 离开了房间`, 2.5); if (e.id !== this.myId) this.dropRemote(e.id); break;
       case 'disc': g.hud.toast(`${esc(e.name)} 断线中…`, 2.5); break;
       case 'rejoin': g.hud.toast(`${esc(e.name)} 重新连接`, 2.5); break;
+      case 'notice': g.hud.toast(`<b style="color:#f5b321">运维公告</b> · ${esc(e.m)}`, 6); break;
       case 'start': g.hud.toast('新一轮对局开始', 3); audio.announce('Go go go!'); break;
       case 'wave': g.hud.toast(`<b style="color:#ff5a49">第 ${e.n} 波 · ${e.total} 只</b> 从船头冲过来了`, 3.5); audio.announce('Incoming!'); break;
       case 'shot': {
@@ -1047,7 +1072,7 @@ export class NetGame {
       return;
     }
     const a = this.remotes.get(e.id) || (e.id === this.myId ? this.me : null);
-    if (a && a.soldier) bump(a.soldier, e.a === 'charge' ? 2 : 1.5);   // 起手瞬间本体亮一下，给对手反应窗口
+    if (a && a.soldier) { bump(a.soldier, e.a === 'charge' ? 2 : 1.5); bossAnim(a.soldier, 'skill'); }   // 起手瞬间本体亮一下 + 放技能动作
     const p = a ? a.pos : g.renderer.camera.position;
     if (e.a === 'charge') { g.fx.light(p, 1.4, 0.4, 0xff6a2a, 12); g.hud.toast('<b style="color:#ff6a4a">铁皮暴君开始冲撞</b> · 闪开会被撞飞', 1.8); }
     else if (e.a === 'barrage') { g.hud.toast('<b style="color:#8ce36a">瘟疫母体召唤酸液齐射</b> · 快离开脚下这片地', 2.2); audio.announce('Watch your feet'); }
