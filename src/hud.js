@@ -1,6 +1,7 @@
 // HUD 与菜单（DOM）
 import { WEAPONS, PRIMARIES } from './weapons.js';
 import { MAPS, MAP_IDS } from './maps.js';
+import { GFX_GROUPS, GFX_BY_KEY, gfxDefaults, formatItem, describeLevel, LEVEL_MAX } from './graphics.js';
 
 const TEAM_CN = { BL: '潜伏者', GR: '保卫者' };
 const $ = (s, r = document) => r.querySelector(s);
@@ -36,36 +37,62 @@ export class HUD {
     this.root.appendChild(this.veilEl);
     this._veil = '';
     const touch = matchMedia('(pointer:coarse)').matches;
-    this.opts = { team: 'BL', primary: 'ak47', size: 6, diff: 'normal', goal: 50, tod: 'day', map: 'ship', quality: touch ? 'low' : 'high', sens: 1.0, fov: 78, vol: 0.8 };
+    this.opts = { team: 'BL', primary: 'ak47', size: 6, diff: 'normal', goal: 50, tod: 'day', map: 'ship', quality: touch ? 'low' : 'high', sens: 1.0, fov: 78, vol: 0.8, gfx: {} };
     try { Object.assign(this.opts, JSON.parse(localStorage.getItem('cf_ship_opts') || '{}')); } catch (e) { /* 忽略 */ }
+    // 画质细节 = 档位预设打底 + 用户微调；老存档缺哪一项就从档位补，绝不会出现 undefined
+    this.opts.gfx = Object.assign(gfxDefaults(this.opts.quality), this.opts.gfx || {});
+    this.buildGfx();
     this.buildMenu();
   }
   saveOpts() { try { localStorage.setItem('cf_ship_opts', JSON.stringify(this.opts)); } catch (e) { /* 忽略 */ } }
+  // 设置项支持 "gfx.res" 这种嵌套键，面板与主菜单共用同一套绑定
+  getOpt(k) { let v = this.opts; for (const s of k.split('.')) v = v == null ? v : v[s]; return v; }
+  setOpt(k, val) {
+    const p = k.split('.'); let o = this.opts;
+    for (let i = 0; i < p.length - 1; i++) o = o[p[i]];
+    o[p[p.length - 1]] = val;
+    if (k === 'quality') this.opts.gfx = gfxDefaults(val);   // 切档位 = 细节全部回到该档预设
+  }
 
   // ---------- 菜单 ----------
+  fmtVal(k, v) {
+    const it = k.indexOf('.') >= 0 ? GFX_BY_KEY[k.split('.')[1]] : null;
+    if (it) return formatItem(it, v);
+    return (+v).toFixed(k === 'fov' ? 0 : 2);
+  }
   buildMenu() {
-    const o = this.opts;
     const segs = this.root.querySelectorAll('.seg[data-k]');
     for (const s of segs) {
       const k = s.dataset.k;
       for (const b of s.querySelectorAll('button')) {
-        if (String(o[k]) === b.dataset.v) b.classList.add('on');
+        if (String(this.getOpt(k)) === b.dataset.v) b.classList.add('on');
         b.addEventListener('click', () => {
           for (const x of s.querySelectorAll('button')) x.classList.remove('on');
           b.classList.add('on');
-          o[k] = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v;
+          const v = isNaN(+b.dataset.v) ? b.dataset.v : +b.dataset.v;
+          this.setOpt(k, v);
           this.saveOpts();
-          this.g.onOption?.(k, o[k]);
+          this.g.onOption?.(k, v);
+          if (k === 'quality') this.syncControls();   // 细节项跟着档位一起复位
           this.g.audio?.playUI('click');
         });
       }
     }
     for (const sl of this.root.querySelectorAll('.slider[data-k]')) {
       const k = sl.dataset.k, inp = sl.querySelector('input'), sp = sl.querySelector('span');
-      inp.value = o[k]; sp.textContent = (+o[k]).toFixed(k === 'fov' ? 0 : 2);
+      inp.value = this.getOpt(k); sp.textContent = this.fmtVal(k, this.getOpt(k));
       inp.addEventListener('input', () => {
-        o[k] = +inp.value; sp.textContent = (+inp.value).toFixed(k === 'fov' ? 0 : 2); this.saveOpts();
-        this.g.onOption?.(k, o[k]);
+        this.setOpt(k, +inp.value); sp.textContent = this.fmtVal(k, +inp.value); this.saveOpts();
+        this.g.onOption?.(k, +inp.value);
+      });
+    }
+    for (const b of this.root.querySelectorAll('[data-act]')) {
+      b.addEventListener('click', () => {
+        const a = b.dataset.act;
+        if (a === 'gfx') this.openGfx();
+        else if (a === 'gfxBack') this.closeGfx();
+        else if (a === 'gfxReset') this.resetGfx();
+        else if (a === 'gfxCalm') this.calmGfx();
       });
     }
     $('#btnStart').addEventListener('click', () => this.g.startMatch());
@@ -85,21 +112,82 @@ export class HUD {
     for (const a of this.root.querySelectorAll('#clinks a, .mlinks a'))
       a.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
   }
-  setIcons(icons) {
-    this.icons = icons;
+  // ---------- 画面详情面板 ----------
+  // 面板完全照 graphics.js 的 schema 生成：加一项旋钮只改 schema，不必再动这里
+  buildGfx() {
+    const box = this.el.gfxBody;
+    if (!box) return;
+    let h = '';
+    for (const grp of GFX_GROUPS) {
+      h += `<div class="gfxG"><div class="gfxH">${grp.g}</div><div class="gfxRows">`;
+      for (const it of grp.items) {
+        const k = 'gfx.' + it.k;
+        h += `<div class="gfxRow"><div class="opt"><div class="lab">${it.lab}${it.nextMatch ? '<em class="nm">下一局生效</em>' : ''}</div>`;
+        if (it.t === 'seg') h += `<div class="seg" data-k="${k}">${it.o.map((x) => `<button data-v="${x[0]}">${x[1]}</button>`).join('')}</div>`;
+        else h += `<div class="slider" data-k="${k}"><input type="range" min="${it.min}" max="${it.max}" step="${it.step}"><span></span></div>`;
+        h += `</div>${it.hint ? `<div class="gfxHint">${it.hint}</div>` : ''}</div>`;
+      }
+      h += '</div></div>';
+    }
+    box.innerHTML = h;
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Escape' && this.el.gfx && !this.el.gfx.classList.contains('hidden')) { e.preventDefault(); this.closeGfx(); }
+    });
+  }
+  openGfx() {
+    this.gfxBack = this.g.playing && !this.g.ended ? 'pause' : 'menu';
+    this.gfxScroll = this.el.gfxBody ? this.el.gfxBody.scrollTop : 0;
+    this.show('gfx');
+    this.gfxSync();
+  }
+  closeGfx() {
+    const back = this.gfxBack || 'menu';
+    this.show(back);
+    if (back === 'pause') { this.g.paused = true; const h = document.querySelector('#pause h2'); if (h) h.textContent = this.g.net ? '菜单' : '暂停'; }
+  }
+  resetGfx() {
+    this.opts.gfx = gfxDefaults(this.opts.quality);
+    this.saveOpts(); this.syncControls(); this.g.applyGfx && this.g.applyGfx();
+    this.toast2('已恢复到「' + ({ low: '流畅', medium: '均衡', high: '极致' }[this.opts.quality] || '') + '」档默认');
+  }
+  // 防晕预设：晕 3D 的人最在意的四项一次给足（震动/晃动/颗粒/受击干扰）
+  calmGfx() {
+    Object.assign(this.opts.gfx, { shake: 0.1, bob: 0.3, kick: 0.7, grain: 0, vignette: 0.1, hurtFx: 0.4, bloomStrength: 0.08 });
+    this.saveOpts(); this.syncControls(); this.g.applyGfx && this.g.applyGfx();
+    this.toast2('防晕预设：镜头震动与受击干扰已压到很低，仍可逐项微调');
+  }
+  toast2(msg) { if (this.g.hud) this.toast(msg, 3); }
+  // 面板打开时每秒刷一次读数（自动降载会改"生效值"，只写用户值会骗人）
+  gfxSync() {
+    const el = this.el.gfxStat;
+    if (!el) return;
+    const e = (this.g.gfxEff) || this.opts.gfx;
+    const lv = e._level | 0;
+    el.innerHTML = `实测 <b>${this.g.fps || 0}</b> FPS ｜ 内部渲染 <b>${this.g.renderer ? this.g.renderer.rtW + '×' + this.g.renderer.rtH : '-'}</b>`
+      + ` ｜ draw call <b>${this.g.infoCalls == null ? '-' : this.g.infoCalls}</b> ｜ 着色器 <b>${this.g.infoProgs == null ? '-' : this.g.infoProgs}</b>`
+      + `<br>你的设定 渲染 ${this.opts.gfx.res}% ｜ 自动调整 ${this.opts.gfx.auto === 'off' ? '关闭' : (this.opts.gfx.auto === 'aggressive' ? '积极' : '保守')}`
+      + `（目标 ${this.opts.gfx.autoTarget} FPS）｜ 当前生效：${describeLevel(lv)}`
+      + (this.opts.gfx.auto !== 'off' ? `<span class="gfxAutoTag">自动已接管 ${LEVEL_MAX} 档阶梯</span>` : '');
+  }
+  setIcons(icons) {    this.icons = icons;
     for (const c of this.root.querySelectorAll('#loadCards .card')) c.querySelector('img').src = icons[c.dataset.w] || '';
   }
   syncControls() {
-    const o = this.opts;
-    for (const s of this.root.querySelectorAll('.seg[data-k]')) for (const b of s.querySelectorAll('button')) b.classList.toggle('on', String(o[s.dataset.k]) === b.dataset.v);
-    for (const sl of this.root.querySelectorAll('.slider[data-k]')) {
-      const k = sl.dataset.k; sl.querySelector('input').value = o[k]; sl.querySelector('span').textContent = (+o[k]).toFixed(k === 'fov' ? 0 : 2);
+    for (const s of this.root.querySelectorAll('.seg[data-k]')) {
+      const k = s.dataset.k;
+      for (const b of s.querySelectorAll('button')) b.classList.toggle('on', String(this.getOpt(k)) === b.dataset.v);
     }
+    for (const sl of this.root.querySelectorAll('.slider[data-k]')) {
+      const k = sl.dataset.k;
+      sl.querySelector('input').value = this.getOpt(k);
+      sl.querySelector('span').textContent = this.fmtVal(k, this.getOpt(k));
+    }
+    if (this.el.gfx && !this.el.gfx.classList.contains('hidden')) this.gfxSync();
   }
   show(name) {
     if (name === 'menu' || name === 'pause') this.syncControls();
-    for (const n of ['menu', 'pause', 'end', 'loadout', 'loading']) this.el[n].classList.toggle('hidden', n !== name);
-    this.el.hud.classList.toggle('hidden', name === 'menu' || name === 'loading' || name === 'end');
+    for (const n of ['menu', 'pause', 'end', 'loadout', 'loading', 'gfx']) this.el[n].classList.toggle('hidden', n !== name);
+    this.el.hud.classList.toggle('hidden', name === 'menu' || name === 'loading' || name === 'end' || name === 'gfx');
   }
   loading(p, text) { this.el.loadBar.style.width = (p * 100).toFixed(0) + '%'; if (text) this.el.loadTxt.textContent = text; }
 
@@ -433,18 +521,33 @@ const TEMPLATE = `
       </div>
       <button class="go" id="btnStart">开 始 游 戏</button>
       <button class="go" id="btnNet" style="margin-top:10px">联 机 对 战</button>
-      <div class="note">点击开始后鼠标将被锁定，按 Esc 暂停。画质切换会重新加载页面。</div>
+      <button class="go sec" data-act="gfx" style="margin-top:10px">画 面 设 置</button>
+      <div class="note">点击开始后鼠标将被锁定，按 Esc 暂停。画面设置里每一项都即时生效，只有「贴图精度」要重进对局。</div>
       <div class="mlinks"><a href="https://github.com/riba2534/claude-opus-5-5-demo" target="_blank" rel="noopener noreferrer">GitHub 源码</a><span>·</span><a href="https://x.com/riba2534" target="_blank" rel="noopener noreferrer">X @riba2534</a></div>
     </div>
   </div>
 </div>
+
+<div id="gfx" class="screen hidden"><div class="gfxBox">
+  <h2>画面设置</h2>
+  <div class="gfxTop">
+    <div class="opt"><div class="lab">画质档位</div><div class="seg" data-k="quality"><button data-v="low">流畅</button><button data-v="medium">均衡</button><button data-v="high">极致</button></div></div>
+    <div class="gfxBtns"><button class="go sec" data-act="gfxReset">恢复档位默认</button><button class="go sec" data-act="gfxCalm">防晕预设</button></div>
+  </div>
+  <div class="sub">先选档位，再逐项细调。每一项改完立刻生效，右下角能看到"你的设定 / 当前生效"两行差别。</div>
+  <div class="gfxBody" id="gfxBody"></div>
+  <div class="gfxFoot">
+    <div class="gfxStat" id="gfxStat"></div>
+    <button class="go" data-act="gfxBack">返 回（Esc）</button>
+  </div>
+</div></div>
 
 <div id="pause" class="screen hidden"><div class="pauseBox"><h2>暂停</h2><div class="pauseTip note" style="margin:2px 0 8px"></div>
   <div class="opt"><div class="lab">鼠标灵敏度</div><div class="slider" data-k="sens"><input type="range" min="0.2" max="3" step="0.05"><span></span></div></div>
   <div class="opt"><div class="lab">视野 FOV</div><div class="slider" data-k="fov"><input type="range" min="65" max="100" step="1"><span></span></div></div>
   <div class="opt"><div class="lab">音量</div><div class="slider" data-k="vol"><input type="range" min="0" max="1" step="0.05"><span></span></div></div>
   <div class="opt"><div class="lab">时间</div><div class="seg" data-k="tod"><button data-v="day">白天</button><button data-v="dusk">黄昏</button></div></div>
-  <button class="go" id="btnResume">继 续</button><button class="go sec" id="btnQuit" style="margin-top:10px">退出到主菜单</button>
+  <button class="go" id="btnResume">继 续</button><button class="go sec" data-act="gfx" style="margin-top:10px">画面设置</button><button class="go sec" id="btnQuit" style="margin-top:10px">退出到主菜单</button>
 </div></div>
 
 <div id="loadout" class="screen hidden"><div class="loadBox"><h2>更换主武器</h2><div class="sub">复活时生效；在出生点内立即生效。副武器沙漠之鹰、军刀、手雷自动配备。</div>

@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { NetGame } from '/src/netplay.js';
 import { HUD } from '/src/hud.js';
 import { loadMap } from '/server/mapdata.js';
+import { userGfx } from '/src/graphics.js';
 
 const out = document.getElementById('out');
 const say = (s) => { out.textContent += s + '\n'; };
@@ -23,7 +24,9 @@ function stubGame() {
     time: 0, frame: 0, playing: false, paused: false, ended: false, net: null, inLoadout: false,
     actors: [], tags: [], score: { BL: 0, GR: 0 }, goal: 50, timeLeft: 600,
     qs: new URLSearchParams(location.search),
-    opts: { sens: 1, fov: 78, vol: 0, primary: 'ak47' },
+    opts: { sens: 1, fov: 78, vol: 0, primary: 'ak47', quality: 'high', gfx: {} },
+    // 真实 Game 在 init 里就会算出 gfxEff（画质生效值），桩对象必须带上，否则灯/光效一律被当成关掉
+    gfxEff: userGfx({ quality: 'high', gfx: {} }),
     renderer: { scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(78, 1.6, 0.05, 400) },
     world,
     fx: { muzzle() {}, tracer() {}, impact() {}, explosion() {}, light() {}, bloodSplat() {}, shake: 0 },

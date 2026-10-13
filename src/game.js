@@ -17,6 +17,7 @@ import { Bot, BOT_NAMES } from './bots.js';
 import { TouchControls } from './touch.js';
 import { NetGame } from './netplay.js';
 import { preloadBossModels, prewarmBossModels } from './bossmodels.js';
+import { applyLevel, autoStep, userGfx, gfxDefaults, describeLevel } from './graphics.js';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
 const MULTI = ['', '', 'DOUBLE KILL', 'TRIPLE KILL', 'MULTI KILL', 'ULTRA KILL', 'RAMPAGE', 'UNSTOPPABLE', 'GODLIKE'];
@@ -35,15 +36,17 @@ export class Game {
   async init() {
     this.hud = new HUD(this);
     this.opts = this.hud.opts;
-    if (this.qs.get('q')) this.opts.quality = this.qs.get('q');
+    if (this.qs.get('q')) { this.opts.quality = this.qs.get('q'); this.opts.gfx = gfxDefaults(this.opts.quality); }
+    this.autoLevel = 0;
+    this.computeGfx();
     this.hud.show('loading');
     this.hud.loading(0.05, '初始化渲染器');
     await nextFrame();
-    this.renderer = new Renderer(document.getElementById('c'), this.opts.quality);
+    this.renderer = new Renderer(document.getElementById('c'), this.gfxEff);
     this.renderer.camera.fov = this.opts.fov;
     this.hud.loading(0.12, '生成船体 / 集装箱 / 地面纹理');
     await nextFrame(); await nextFrame();
-    this.T = buildTextures(this.opts.quality);
+    this.T = buildTextures(this.gfxEff.tex);
     this.mapId = 'ship';
     this.hud.loading(0.55, `搭建${MAPS[this.mapId].name}`);
     await nextFrame();
@@ -51,16 +54,18 @@ export class Game {
     this._mapRoot = new THREE.Group();
     this.renderer.scene.add(this._mapRoot);
     const def = mapOf(this.mapId);
-    if (def.textures) def.textures(this.T, this.opts.quality);
+    if (def.textures) def.textures(this.T, this.gfxEff.tex);
     this.map = def.build(this._mapRoot, this.T, this.world, {});
     this.map.root = this._mapRoot;
     this.hud.loading(0.68, '天空与海面');
     await nextFrame();
-    this.env = new Environment(this.renderer.renderer, this.renderer.scene, this.opts.quality);
+    this.env = new Environment(this.renderer.renderer, this.renderer.scene, this.gfxEff);
     this.env.extraScenes = [this.renderer.vmScene];
     this.env.setMap(def);
     this.env.apply(this.opts.tod);
     this.fx = new Effects(this.renderer.scene, this.T, this.renderer.camera);
+    // 特效预算也归画质管：不在这里下一次，低画质开局仍会按满档放粒子
+    this.fx.applyQuality(this.gfxEff);
     this.fx.initAmbient(this.map.funnelTop);
     this.vm = new ViewModel(this.renderer.vmScene, this.T, this.opts.team);
     this.hud.loading(0.8, '计算寻路网格');
@@ -103,7 +108,7 @@ export class Game {
     disposeMap(this.map);
     this.world.clear();
     this.mapId = def.id;
-    if (def.textures) def.textures(this.T, this.opts.quality);
+    if (def.textures) def.textures(this.T, this.gfxEff.tex);
     const root = new THREE.Group();
     this.renderer.scene.add(root);
     this._mapRoot = root;
@@ -120,12 +125,43 @@ export class Game {
     await nextFrame();
     try { this.renderer.renderer.compile(this.renderer.scene, this.renderer.camera); } catch (e) { /* 忽略 */ }
   }
+  // 生效画质 = 档位预设 + 手动微调，再叠一层自动降载档。
+  // 自动那一层绝不写回 opts.gfx：帧率回来就原样交还用户的设定（老版本"只降不升"会永久吃掉画质）
+  computeGfx() {
+    const on = this.opts.gfx && this.opts.gfx.auto !== 'off';
+    this.gfxEff = applyLevel(userGfx(this.opts), on ? this.autoLevel || 0 : 0);
+    return this.gfxEff;
+  }
+  applyGfx() {
+    const e = this.computeGfx();
+    if (this.renderer) this.renderer.applyQuality(e);
+    if (this.env) this.env.applyQuality(e);
+    if (this.fx) this.fx.applyQuality(e);
+    this.lampLights();
+    if (this.net) this.net.redressGfx();
+    if (this.hud) this.hud.gfxSync();
+    return e;
+  }
+  // 自动调整：每个 1 秒窗口喂一次实测帧率，阶梯升降都由 graphics.js 里的迟滞说了算
+  autoTick() {
+    const o = this.opts.gfx;
+    if (!o || o.auto === 'off' || !this.playing || this.paused) return;
+    // 不许去追一个被帧率上限挡住的数字：上限 30 却设目标 60 会一路降到底
+    const target = Math.min(o.autoTarget | 0, (o.maxFps | 0) || 999);
+    const st = this._ast || (this._ast = { level: this.autoLevel | 0, bad: 0, good: 0, cool: 0 });
+    const r = autoStep(st, this.fps, target, o.auto);
+    if (!r) return;
+    this.autoLevel = r.level;
+    this.applyGfx();
+    this.hud.toast(`自动画质：${r.dir}载到第 ${r.level} 档 · ${describeLevel(r.level)}（${this.fps} FPS / 目标 ${target}）`, 3.5);
+  }
   lampLights() {
     // 换图时旧灯的 PointLight 数量必须一起降下来，否则材质会累积重编译
     for (const l of this.mapLights || []) this.renderer.scene.remove(l);
     this.mapLights = [];
-    if (this.opts.quality === 'low') return;
-    for (const p of (this.map && this.map.lampSpots ? this.map.lampSpots.slice(0, 4) : [])) {
+    // 池子里要给枪口闪光和 BOSS 灯留两盏，街灯只花剩下的预算
+    const n = Math.max(0, Math.min(4, ((this.gfxEff || {}).lamps | 0) - 2));
+    for (const p of (this.map && this.map.lampSpots ? this.map.lampSpots.slice(0, n) : [])) {
       const l = new THREE.PointLight(0xffd9a0, 5, 9, 1.8);
       l.position.copy(p);
       this.renderer.scene.add(l);
@@ -342,7 +378,12 @@ export class Game {
     if (k === 'vol') audio.setVolumes({ master: v });
     if (k === 'fov' && this.renderer) { this.renderer.camera.fov = v; this.renderer.camera.updateProjectionMatrix(); }
     if (k === 'tod' && this.env) this.env.apply(v);
-    if (k === 'quality') { this.hud.saveOpts(); location.reload(); }
+    if (k === 'quality' || k.indexOf('gfx.') === 0) {
+      // 档位与每一项细节都即时生效；只有贴图精度要重进对局（它决定程序化贴图的生成尺寸）
+      if (k === 'gfx.auto' && v === 'off') { this._ast = null; this.autoLevel = 0; }
+      if (k === 'gfx.tex') this.hud.toast('贴图精度会在下一局生效（要重建全部程序化贴图）', 3.5);
+      this.applyGfx();
+    }
     if (k === 'team' && this.vm) this.vm.setTeam(v);
     if (k === 'map') this.setMap(v);   // 菜单里换图，背景立刻变成那张图
   }
@@ -649,9 +690,10 @@ export class Game {
     if (dt <= 0) return;
     const R = this.renderer, cam = R.camera;
     this.realTime = (this.realTime || 0) + dt;
-    // 阴影隔帧刷新（太阳静止，仅士兵投影随动；开场前几帧强制刷新避免无阴影）
+    // 阴影刷新频率：太阳静止、只有士兵在动，隔帧刷新的滞后可忽略（画质面板里可调）
     this.shadowTick = (this.shadowTick || 0) + 1;
-    if (this.shadowTick % 2 === 0 || this.shadowTick <= 2) R.renderer.shadowMap.needsUpdate = true;
+    const se = Math.max(1, (this.gfxEff || {}).shadowEvery || 2);
+    if (this.shadowTick % se === 0 || this.shadowTick <= 2) R.renderer.shadowMap.needsUpdate = true;
     const active = this.playing && !this.paused;
     if (active) this.simulate(dt);
     else if (!this.playing) {
@@ -666,6 +708,14 @@ export class Game {
       this.idleAcc = (this.idleAcc || 0) + dt;
       if (this.idleAcc < 1 / 30) return;
       this.idleAcc = 0;
+    } else {
+      // 帧率上限只掐渲染：模拟仍按 rAF 跑，所以输入手感不受影响，省下来的是 GPU 与发热
+      const cap = (this.gfxEff || {}).maxFps | 0;
+      if (cap > 0) {
+        this.capAcc = (this.capAcc || 0) + dt;
+        if (this.capAcc < 1 / cap) return;
+        this.capAcc = 0;
+      }
     }
     this.renderFrame(dt);
   }
@@ -736,25 +786,17 @@ export class Game {
     this.fpsAcc = (this.fpsAcc || 0) + dt; this.fpsN = (this.fpsN || 0) + 1;
     if (this.fpsAcc > 1) {
       this.fps = Math.round(this.fpsN / this.fpsAcc); this.fpsAcc = 0; this.fpsN = 0;
+      const inf = R.renderer.info;
+      this.infoCalls = inf.render.calls;
+      this.infoProgs = inf.programs ? inf.programs.length : 0;
       const lbl = document.querySelector('#radarWrap .lbl');
       if (lbl) lbl.textContent = `${mapName(this.mapId)} · ${this.fps} FPS`;
-      if (this.playing && !this.paused && this.time > 8 && !this.fpsHinted && this.fps < 32 && this.opts.quality !== 'low') {
+      if (this.hud.el.gfx && !this.hud.el.gfx.classList.contains('hidden')) this.hud.gfxSync();
+      if (this.playing && !this.paused && this.time > 8 && !this.fpsHinted && this.fps < 32 && (this.opts.gfx.auto || 'off') === 'off') {
         this.fpsHinted = true;
-        this.hud.toast('帧率较低：可按 Esc 在主菜单把画质调到「均衡」或「流畅」', 5);
+        this.hud.toast('帧率较低：Esc → 画面设置里可逐项降载，或打开「自动调整」', 5);
       }
-      // 持续掉帧就自己动手降负载：先按 1:1 像素渲染，再关辉光。
-      // 只降不升（避免来回抖），最多两档 —— BOSS 登场这类突发最容易把弱机直接钉死
-      this.slow = this.fps < 34 ? (this.slow || 0) + 1 : 0;
-      if (this.playing && !this.paused && this.time > 6 && this.slow >= 2 && (this.qStep || 0) < 2) {
-        this.slow = 0; this.qStep = (this.qStep || 0) + 1;
-        if (this.qStep === 1) {
-          this.renderer.renderer.setPixelRatio(1); this.renderer.resize();
-          this.hud.toast('帧率偏低：已自动把渲染分辨率降到 1:1', 4);
-        } else if (this.renderer.bloom) {
-          this.renderer.bloom.enabled = false;
-          this.hud.toast('帧率仍偏低：已自动关闭辉光', 4);
-        }
-      }
+      this.autoTick();
     }
     // 音频监听者
     const fwd = _v.set(0, 0, -1).applyQuaternion(cam.quaternion), up = _v2.set(0, 1, 0).applyQuaternion(cam.quaternion);

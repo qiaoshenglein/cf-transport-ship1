@@ -206,7 +206,7 @@ function makeClouds(preset) {
 }
 
 export class Environment {
-  constructor(renderer, scene, quality) {
+  constructor(renderer, scene, gfx) {
     this.renderer = renderer; this.scene = scene;
     this.preset = PRESETS.day;
     this.sky = new Sky(); this.sky.scale.setScalar(40000);
@@ -218,8 +218,6 @@ export class Environment {
     this.sunDir = new THREE.Vector3();
     this.sun = new THREE.DirectionalLight(0xffffff, 3);
     this.sun.castShadow = true;
-    const sm = quality === 'low' ? 1024 : quality === 'medium' ? 2048 : 4096;
-    this.sun.shadow.mapSize.set(sm, sm);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.035;
     this.sun.target.position.set(-6, 0, 0);
@@ -231,7 +229,28 @@ export class Environment {
     this.envRT = null;
     this.shipDist = 0;
     this.shipSpeed = 6.5;
+    this.exposureK = 1; this.fogK = 1; this.cloudsOn = 1;
     this.apply('day');
+    this.applyQuality(gfx);
+  }
+  // 阴影分辨率/曝光/雾/云层热改。改 mapSize 必须把旧 RT 释放掉，否则 three 不会重新分配。
+  applyQuality(e) {
+    if (!e) return;
+    this.gfx = e;
+    const sm = e.shadow | 0;
+    const sun = this.sun;
+    sun.castShadow = sm > 0;
+    if (sm > 0 && sun.shadow.mapSize.x !== sm) {
+      sun.shadow.mapSize.set(sm, sm);
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    }
+    this.exposureK = e.exposure == null ? 1 : e.exposure;
+    this.fogK = e.fogK == null ? 1 : e.fogK;
+    this.cloudsOn = e.clouds == null ? 1 : e.clouds;
+    this.clouds.visible = !!this.cloudsOn && !!this.preset.cloudCover;
+    this.renderer.toneMappingExposure = (this.preset.exposure || 0.75) * this.exposureK;
+    this.scene.fog.density = this.preset.fogDensity * this.fogK;
+    this.ocean.material.uniforms.uFogDensity.value = this.scene.fog.density;
   }
   // 换图：海面开关 + 该图的大气配色与阴影体量（env 可以是整套覆盖，也可以按 tod 分别覆盖）
   setMap(def) {
@@ -268,15 +287,16 @@ export class Environment {
     cam.near = 1; cam.far = -box.min.z + 10;
     cam.updateProjectionMatrix();
     this.hemi.color.set(P.hemiSky); this.hemi.groundColor.set(P.hemiGround); this.hemi.intensity = P.hemiInt;
-    this.scene.fog.color.set(P.fog); this.scene.fog.density = P.fogDensity;
+    this.scene.fog.color.set(P.fog); this.scene.fog.density = P.fogDensity * (this.fogK == null ? 1 : this.fogK);
     const ou = this.ocean.material.uniforms;
     ou.uSunDir.value.copy(this.sunDir); ou.uSunColor.value.set(P.sunColor).multiplyScalar(P.sunInt / 3);
     ou.uDeep.value.set(P.deep); ou.uShallow.value.set(P.shallow);
-    ou.uZen.value.set(P.skyZen); ou.uHor.value.set(P.skyHor); ou.uFog.value.set(P.fog); ou.uFogDensity.value = P.fogDensity;
+    ou.uZen.value.set(P.skyZen); ou.uHor.value.set(P.skyHor); ou.uFog.value.set(P.fog); ou.uFogDensity.value = this.scene.fog.density;
     const cu = this.clouds.material.uniforms;
     cu.uSunDir.value.copy(this.sunDir); cu.uLit.value.set(P.cloudLit); cu.uShade.value.set(P.cloudShade);
     cu.uCover.value = P.cloudCover; cu.uFog.value.set(P.fog);
-    this.renderer.toneMappingExposure = P.exposure;
+    this.clouds.visible = (this.cloudsOn == null || !!this.cloudsOn) && !!P.cloudCover;
+    this.renderer.toneMappingExposure = P.exposure * (this.exposureK == null ? 1 : this.exposureK);
     this.buildEnvMap();
   }
   buildEnvMap() {

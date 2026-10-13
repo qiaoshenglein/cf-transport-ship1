@@ -10,7 +10,7 @@ import { buildGunMerged } from './guns.js';
 import { audio } from './audio.js';
 import { SUPPLY_NAME } from './supplies.js';
 import { MAPS, MAP_IDS, mapName, suppliesForMap } from './maps.js';
-import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, bossLod, prewarmBossFx, BOSS_TINT } from './bosslook.js';
+import { dressSoldier, undressSoldier, hitMatOf, bump, emitAmbient, bossLod, glowVisible, prewarmBossFx, BOSS_TINT } from './bosslook.js';
 import { preloadBossModels, prewarmBossModels, bossModelReady, bossAnim } from './bossmodels.js';
 
 const DT = 1 / TICK_RATE;
@@ -356,14 +356,26 @@ export class NetGame {
       }
     });
   }
-  // 全场一盏 BOSS 灯：光源数量恒定，登场时只换颜色和位置，不触发着色器重编译；低画质直接不给
+  // 全场一盏 BOSS 灯：光源数量恒定，登场时只换颜色和位置，不触发着色器重编译；画质设置不给灯预算就直接跳过
   ensureLamp() {
-    if (this.lamp || !this.room || this.room.mode !== 'pve' || this.g.opts.quality === 'low') return;
+    if (this.lamp || !this.room || this.room.mode !== 'pve' || !((this.g.gfxEff || {}).lamps > 0)) return;
     const l = new THREE.PointLight(0xffffff, 0, 18, 2);
     this.g.renderer.scene.add(l);
     this.lamp = l;
   }
-  lookOpts() { return { lamp: this.lamp }; }
+  lookOpts() { return { lamp: this.lamp, glow: (this.g.gfxEff || {}).bossGlow }; }
+  // 画质里的"BOSS 光效"要立刻见效：能热切就热切，只有升档（当初没建那些面片）才重穿一次
+  redressGfx() {
+    if (!this.inMatch) return;
+    const want = ((this.g.gfxEff || {}).bossGlow == null ? 2 : this.g.gfxEff.bossGlow) | 0;
+    const one = (a) => {
+      const s = a && a.soldier;
+      if (!s || !s.lookKey) return;
+      if (!glowVisible(s, want)) dressSoldier(s, s.lookKey, s.possessed, this.lookOpts());
+    };
+    for (const a of this.remotes.values()) one(a);
+    if (this.me) one(this.me);
+  }
   dropLamp() {
     if (!this.lamp) return;
     this.g.renderer.scene.remove(this.lamp);

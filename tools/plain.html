@@ -1,0 +1,13 @@
+<!doctype html>
+<!-- 空白宿主页：只配好 three 的 importmap，不建任何 WebGL 上下文。
+     回归测试需要自己 new WebGLRenderer 时用这一页 —— 资产工作台会先占掉一个上下文，
+     软件渲染(swiftshader)下第二个就可能创建失败。 -->
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>测试宿主</title>
+<script type="importmap">{"imports":{"three":"/vendor/three.module.js","three/addons/":"/addons/"}}</script>
+<style>body{margin:0;background:#0c0f14;color:#d7dde7;font:13px/1.5 "Microsoft YaHei",sans-serif}</style>
+</head>
+<body></body>
+</html>

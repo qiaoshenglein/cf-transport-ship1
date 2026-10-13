@@ -162,6 +162,25 @@ body.lk #clinks{opacity:.22}
 #loading .tip{font-size:13px;color:#8c959c;max-width:70vw;text-align:center}
 .pauseBox{width:min(520px,94vw);padding:24px;background:var(--panel2);border:1px solid rgba(255,255,255,.1)}
 .pauseBox h2{margin:0 0 16px;letter-spacing:6px;font-size:22px}
+/* 画面设置：项多且要边改边看，所以整屏定高、只有中间列表滚动，档位与读数固定在两头 */
+.gfxBox{width:min(1040px,96vw);max-height:94vh;display:flex;flex-direction:column;padding:20px 24px;background:var(--panel2);border:1px solid rgba(255,255,255,.12)}
+.gfxBox h2{margin:0 0 10px;letter-spacing:6px;font-size:22px}
+.gfxBox .sub{color:var(--hudDim);font-size:12.5px;margin-bottom:12px}
+.gfxTop{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.12)}
+.gfxTop .gfxBtns{display:flex;gap:8px;margin-left:auto}
+.gfxTop .go{width:auto;margin:0;padding:9px 14px;font-size:13px;letter-spacing:2px}
+.gfxBody{flex:1;overflow:auto;padding:6px 10px 6px 0;scrollbar-width:thin}
+.gfxG{margin:14px 0 18px}
+.gfxH{font-size:12px;letter-spacing:3px;color:var(--accent);margin-bottom:8px;border-left:3px solid var(--accent);padding-left:8px}
+.gfxRows{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:10px 22px}
+.gfxRow .opt .lab{display:flex;align-items:baseline;gap:6px}
+.gfxRow .lab .nm{font-style:normal;font-size:10px;color:#ffb0b0;border:1px solid rgba(255,120,120,.4);padding:0 4px}
+.gfxRow .seg button{min-width:52px;padding:6px 4px;font-size:12px;flex:1 1 auto}
+.gfxHint{font-size:11px;line-height:1.5;color:#7f8892;margin-top:4px}
+.gfxFoot{padding-top:10px;border-top:1px solid rgba(255,255,255,.12)}
+.gfxStat{font-size:12px;line-height:1.7;color:var(--hudDim);font-family:var(--num)}
+.gfxStat b{color:#fff}
+.gfxAutoTag{display:inline-block;margin-left:8px;padding:0 6px;border:1px solid rgba(255,255,255,.2);color:#ffd24a;font-family:inherit}
 .endBox{width:min(900px,96vw);padding:24px 26px;background:var(--panel2);border:1px solid rgba(255,255,255,.12)}
 .endBox .res{font-size:52px;font-weight:900;letter-spacing:14px;text-align:center}
 .endBox .res.win{color:#ffd24a;text-shadow:0 0 30px rgba(255,160,0,.5)}

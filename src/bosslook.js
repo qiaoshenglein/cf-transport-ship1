@@ -292,6 +292,9 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   sol.hitMat = L.hit || 'flesh';
   sol.hideGun = !!L.noGun;
   if (sol.gun) sol.gun.visible = !L.noGun;
+  // BOSS 光效分档：0 全关、1 只留地面技能环（它是"多大范围危险"的信息，不是装饰）、2 完整
+  const glow = opts.glow == null ? 2 : opts.glow;
+  sol.glowK = glow; sol.glowBuilt = glow;
 
   // 材质与几何全部走缓存：第二次登场只是把现成的东西挂到骨骼上
   const set = takeSet(key, possessed);
@@ -312,7 +315,7 @@ export function dressSoldier(sol, key, possessed, optsIn) {
     bone.add(mesh); extras.push(mesh);
   }
   // 地面警示环 = 技能半径，隔着烟雾也能看出它是什么、有多大
-  if (L.aura && pg.ring) {
+  if (L.aura && pg.ring && glow >= 1) {
     const ring = new THREE.Mesh(pg.ring, set.aura);
     ring.position.y = 0.06; ring.renderOrder = 3;
     sol.root.add(ring); extras.push(ring);
@@ -337,7 +340,7 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   // ⚠️ 这三样都是"整屏级"的加性面片：母体的地面环 9.2m 直径 + 天光柱 6.5m 高 + 光晕 2.6m，
   // 贴脸时三层叠加能把帧时吃到整场的 6 倍（实测 ×6.76），所以全部按"离镜头多远"做淡出
   const refs = { pulse: 0, lod: 0, mats: { AM, EM } };
-  if (L.halo && set.halo) {
+  if (L.halo && set.halo && glow >= 2) {
     const hb = sol.B[L.halo.b] || sol.B.chest;
     const halo = new THREE.Sprite(set.halo);
     halo.position.set(0, L.halo.y, L.halo.z);
@@ -348,7 +351,7 @@ export function dressSoldier(sol, key, possessed, optsIn) {
     hb.add(halo); extras.push(halo);
     refs.halo = { o: halo, sx: hx, sy: hy };
   }
-  if (L.beam && set.beam && pg.beam) {
+  if (L.beam && set.beam && pg.beam && glow >= 2) {
     const beam = new THREE.Mesh(pg.beam, set.beam);
     beam.position.y = L.beam.h * 0.5 - 0.2;
     beam.renderOrder = 5;
@@ -441,8 +444,22 @@ export function bump(sol, k = 1) {
   if (sol && sol.fxRefs) sol.fxRefs.pulse = Math.min(1.1, (sol.fxRefs.pulse || 0) + k);
 }
 
-// 观者距离决定加性面片的淡出系数：3m 内淡到两成，8m 外全额显示
-// 这一条是"BOSS 登场把整屏糊死"的闸门——面片本身没变，变的是它占多少像素
+// 光效分档热切：降档只需把现成的面片藏掉（省填充率就是省这几张），
+// 升档时若当初没建过就必须重穿一次 —— 调用方用返回的 false 判断要不要 dressSoldier
+export function glowVisible(sol, g) {
+  if (!sol || !sol.lookKey) return true;
+  if ((sol.glowBuilt | 0) < (g | 0)) return false;
+  sol.glowK = g;
+  if (sol.aura) sol.aura.visible = g >= 1;
+  const R = sol.fxRefs;
+  if (R) {
+    if (R.halo) R.halo.o.visible = g >= 2;
+    if (R.beam) R.beam.visible = g >= 2;
+  }
+  return true;
+}
+
+// 观者距离决定加性面片的淡出系数：3m 内淡到两成，8m 外全额显示// 这一条是"BOSS 登场把整屏糊死"的闸门——面片本身没变，变的是它占多少像素
 export function bossLod(sol, d) {
   const R = sol && sol.fxRefs;
   if (R) R.lod = d < 3 ? 1 : d > 8 ? 0 : 1 - (d - 3) / 5;
@@ -452,7 +469,7 @@ const _w = new THREE.Vector3();
 // 本体持续冒出的火星 / 酸滴 / 影雾（由调用方按距离节流，fx 传 g.fx）
 export function emitAmbient(sol, fx, dt) {
   const L = sol && sol.lookKey ? LOOKS[sol.lookKey] : null;
-  if (!L || !L.emit || !fx) return;
+  if (!L || !L.emit || !fx || (sol.glowK | 0) < 2) return;
   sol.emT = (sol.emT || 0) + dt;
   if (sol.emT < L.emit.rate) return;
   sol.emT = 0;

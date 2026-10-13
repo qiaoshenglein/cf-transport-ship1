@@ -11,7 +11,8 @@
     "test:console": "node test/console.mjs",
     "test:map": "node test/mapprobe.mjs all",
     "test:asset": "node test/assetlab.mjs",
-    "test:glb": "node test/boss-glb.mjs"
+    "test:glb": "node test/boss-glb.mjs",
+    "test:gfx": "node test/gfx.mjs"
   },
   "dependencies": {
     "ws": "^8.22.0",

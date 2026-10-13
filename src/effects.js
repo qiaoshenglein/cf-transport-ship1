@@ -96,6 +96,9 @@ export class Effects {
     this.scene = scene; this.camera = camera; this.T = T;
     this.add = new Particles(scene, T.glow, true, 900);
     this.smoke = new Particles(scene, T.puff, false, 900);
+    // 各类预算的"满档值"：画质设置只在这之上做缩放，随时能原样还回去
+    this.addCap = 900; this.smokeCap = 900;
+    this.decalCap = { metal: 160, wood: 100, blood: 60, scorch: 12 };
     this.decals = {
       metal: new Decals(scene, T.holeMetal, 160),
       wood: new Decals(scene, T.holeWood, 100),
@@ -104,6 +107,7 @@ export class Effects {
     };
     // 曳光
     this.tracerMax = 48;
+    this.tracerCap = 48;
     this.tracers = [];
     this.tracerMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({ map: tracerTex(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, color: 0xffe0a0, toneMapped: false }), this.tracerMax);
@@ -127,8 +131,30 @@ export class Effects {
     this.shake = 0;
     this.funnelT = 0;
     this.birds = [];
+    this.ambientOn = true;
+    this.lampOn = true;
+  }
+  // 画质设置落到特效上：粒子/弹孔/曳光预算、枪口动态光、环境特效（烟囱与海鸥）
+  applyQuality(e) {
+    if (!e) return;
+    this.gfx = e;
+    const d = e.fxDensity == null ? 1 : e.fxDensity;
+    this.add.max = Math.round(this.addCap * d);
+    this.smoke.max = Math.round(this.smokeCap * d);
+    if (e.tracers != null) this.tracerMax = Math.min(this.tracerCap, e.tracers | 0);
+    for (const k in this.decals) {
+      const cap = this.decalCap[k];
+      const n = e.decals == null ? cap : Math.min(cap, e.decals | 0);
+      this.decals[k].max = Math.max(1, n);
+      if (this.decals[k].mesh.count > this.decals[k].max) this.decals[k].mesh.count = this.decals[k].max;
+    }
+    this.lampOn = (e.lamps == null ? 3 : e.lamps) > 0;
+    if (!this.lampOn) for (const L of this.lights) L.l.intensity = 0;
+    this.ambientOn = e.ambient == null || !!e.ambient;
+    for (const b of this.birds) b.g.visible = this.ambientOn;
   }
   light(pos, intensity, dur, color = 0xffa850, dist = 9) {
+    if (!this.lampOn) return;
     const L = this.lights[this.lightI++ % this.lights.length];
     L.l.position.copy(pos); L.l.color.set(color); L.l.distance = dist;
     L.t = dur; L.dur = dur; L.peak = intensity; L.l.intensity = intensity;
@@ -221,6 +247,7 @@ export class Effects {
       b.add(body, wrR, wrL);
       b.scale.setScalar(1.1);
       this.scene.add(b);
+      b.visible = this.ambientOn;
       this.birds.push({ g: b, wR: wrR, wL: wrL, r: 25 + Math.random() * 30, h: 18 + Math.random() * 16, sp: 0.18 + Math.random() * 0.12, ph: Math.random() * 6.28, cx: -10 + Math.random() * 30, flap: Math.random() * 6 });
     }
   }
@@ -279,7 +306,7 @@ export class Effects {
     for (const L of this.lights) { if (L.t > 0) { L.t -= dt; L.l.intensity = Math.max(0, L.t / L.dur) * L.peak; } else L.l.intensity = 0; }
     this.shake *= Math.exp(-dt * 5);
     // 烟囱排烟
-    if (this.funnelTop) {
+    if (this.funnelTop && this.ambientOn) {
       this.funnelT -= dt;
       if (this.funnelT <= 0) {
         this.funnelT = 0.14;
@@ -288,6 +315,7 @@ export class Effects {
         this.smoke.emit({ x: f.x + (Math.random() - 0.5) * 2, y: f.y, z: f.z + (Math.random() - 0.5) * 1.5, vx: -shipSpeed * 0.9 - Math.random(), vy: 2.2 + Math.random(), vz: (Math.random() - 0.5) * 0.8, life: 0, max: 9, s0: 2.2, s1: 11, r: g, g: g, b: g * 1.02, a0: 0.42, a1: 0, grav: -0.05, drag: 0.08 });
       }
     }
+    if (!this.ambientOn) return;
     for (const b of this.birds) {
       b.ph += dt * b.sp;
       const x = b.cx + Math.cos(b.ph) * b.r, z = Math.sin(b.ph) * b.r * 0.6, y = b.h + Math.sin(b.ph * 2.3) * 3;

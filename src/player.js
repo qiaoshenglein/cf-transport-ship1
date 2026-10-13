@@ -108,22 +108,24 @@ export class Player extends Actor {
       cam.fov += (g.opts.fov - cam.fov) * Math.min(1, dt * 8); cam.updateProjectionMatrix();
       return;
     }
-    // 晃动
+    // 晃动（舒适项：shake/bob/kick 三个倍率在画面设置里逐项给，0 就是完全不晃）
+    const C = g.gfxEff || {}, bobK2 = C.bob == null ? 1 : C.bob;
     const sp = this.onGround ? this.speed : 0;
     this.bobT += dt * (sp > 0.5 ? 6 + sp * 0.9 : 0);
-    const bobK = Math.min(1, sp / 6) * (this.scoped ? 0.2 : 1);
+    const bobK = Math.min(1, sp / 6) * (this.scoped ? 0.2 : 1) * bobK2;
     const by = Math.abs(Math.sin(this.bobT)) * 0.028 * bobK, bx = Math.cos(this.bobT) * 0.012 * bobK;
     if (this.landed && this.landSpeed > 3) this.land = Math.min(0.14, this.landSpeed * 0.012);
     this.land *= Math.exp(-dt * 7);
-    const shake = g.fx.shake * 0.06;
+    const shake = g.fx.shake * 0.06 * (C.shake == null ? 1 : C.shake);
+    const kickK = (C.kick == null ? 1 : C.kick) * 0.75;
     this.eye(cam.position);
-    cam.position.y += by - this.land + (Math.random() - 0.5) * shake;
+    cam.position.y += (by - this.land) * bobK2 + (Math.random() - 0.5) * shake;
     const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
     cam.position.x += cy * bx + (Math.random() - 0.5) * shake;
     cam.position.z += -sy * bx;
     this.camRoll += ((this.keys.has('KeyA') ? 0.008 : 0) - (this.keys.has('KeyD') ? 0.008 : 0) - this.camRoll) * Math.min(1, dt * 6);
     cam.rotation.order = 'YXZ';
-    cam.rotation.set(this.pitch + this.punchP * 0.75 + this.aimPunch, this.yaw + this.punchY * 0.75, this.camRoll);
+    cam.rotation.set(this.pitch + this.punchP * kickK + this.aimPunch, this.yaw + this.punchY * kickK, this.camRoll * bobK2);
     // FOV：狙击镜
     const w = this.weapon;
     let fov = g.opts.fov;
