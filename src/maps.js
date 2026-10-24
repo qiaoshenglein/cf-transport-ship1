@@ -6,6 +6,7 @@ import { buildTown, townTextures, townPve } from './map_town.js';
 import { buildInferno, infernoTextures, infernoPve } from './map_inferno.js';
 import { buildAztec, aztecTextures, aztecPve } from './map_aztec.js';
 import { buildNuke, nukeTextures, nukePve } from './map_nuke.js';
+import { buildPolar, polarTextures, polarPve } from './map_polar.js';
 import { suppliesFor } from './supplies.js';
 
 export const MAPS = {
@@ -96,6 +97,16 @@ export const MAPS = {
     twoLevel: true,
     radar: { w: 92, d: 52, bg: 'rgba(86,92,98,0.95)' },
     pve: nukePve,
+  },
+  polar: {
+    id: 'polar', name: '极地中继站', desc: '雪原通信基地，三路推进与贯通机房争夺',
+    build: buildPolar, textures: polarTextures, sea: false,
+    bounds: [-42, -24, 42, 24], shadow: [-48, 48, -1, 32, -30, 30],
+    env: {
+      day: { elev: 28, azim: 130, turbidity: 2.5, rayleigh: 1.2, mie: 0.003, sunColor: 0xf4f4ef, sunInt: 3.2, hemiSky: 0xd8ecff, hemiGround: 0x9aabb9, hemiInt: 0.5, exposure: 0.58, fog: 0xc2d4e1, fogDensity: 0.0035, skyZen: 0x568cb5, skyHor: 0xd9e8ef, cloudLit: 0xf5f8fc, cloudShade: 0x9fb2c5, cloudCover: 0.4 },
+      dusk: { elev: 5, azim: 148, turbidity: 4, rayleigh: 2.2, mie: 0.004, sunColor: 0xffbd91, sunInt: 2.4, hemiSky: 0x8ba7d0, hemiGround: 0x586c85, hemiInt: 0.48, exposure: 0.68, fog: 0x8eacc6, fogDensity: 0.0045, skyZen: 0x283f70, skyHor: 0xd4b6b2, cloudLit: 0xffd2bc, cloudShade: 0x687b9d, cloudCover: 0.35 },
+    },
+    radar: { w: 84, d: 48, bg: 'rgba(75,98,116,0.95)' }, pve: polarPve,
   },
 };
 export const MAP_IDS = Object.keys(MAPS);
