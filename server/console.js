@@ -105,7 +105,7 @@ export function snapshot(withLogs) {
       rooms: rooms.length, maxRooms: ctx.maxRooms, mpsec: rxRate, proto: ctx.proto,
       humans, bots, mons, open: rooms.reduce((a, r) => a + (r.n < r.max ? 1 : 0), 0),
     },
-    hist, rooms, cfg: { token: !!TOKEN },
+    hist, rooms, maps: ctx.listMaps(), cfg: { token: !!TOKEN },
   };
   if (withLogs) out.logs = logs.slice(-120);
   return out;
@@ -135,7 +135,7 @@ function drop(res) {
 
 // ---------------- 动作 ----------------
 const clip = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, n || 60);
-const ACT_CN = { pause: '暂停对局', resume: '恢复对局', reset: '重开一轮', notice: '发布公告', bots: '清空机器人', kick: '踢出玩家', close: '关闭房间' };
+const ACT_CN = { map: '更新地图开放状态', pause: '暂停对局', resume: '恢复对局', reset: '重开一轮', notice: '发布公告', bots: '清空机器人', kick: '踢出玩家', close: '关闭房间' };
 
 function json(res, code, obj) {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -150,6 +150,7 @@ function readBody(req, cb) {
 // 只做"温和干预"：暂停 / 恢复 / 重开一轮 / 公告 / 清机器人 / 踢人 / 关房。
 // 战斗数值与容量参数一律走 env + 重启，故意不留热调口子（运维台不该变成改外挂开关）。
 function act(a, b) {
+  if (a === 'map') return ctx.setMapEnabled(b.id, b.enabled);
   const r = ctx.rooms.get(String(b.rid));
   if (!r) return { err: '房间不存在或已回收' };
   switch (a) {
@@ -243,7 +244,7 @@ export function handle(req, res, u) {
       let out;
       try { out = act(b.a, b); } catch (e) { out = { err: '动作执行失败：' + e.message }; }
       if (out.err) { logLine('后台动作「' + (ACT_CN[b.a] || b.a) + '」失败：' + out.err, 'warn'); json(res, 400, out); return; }
-      logLine('后台' + (ACT_CN[b.a] || b.a) + '：房间 ' + b.rid + (out.note ? '（' + out.note + '）' : ''), 'ops');
+      logLine('后台' + (ACT_CN[b.a] || b.a) + '：' + (b.a === 'map' ? out.ok : '房间 ' + b.rid + (out.note ? '（' + out.note + '）' : '')), 'ops');
       json(res, 200, out);
     });
     return true;

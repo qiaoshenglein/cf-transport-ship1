@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws';
 import { Room } from './room.js';
 import { PROTO_VERSION, RECONNECT_GRACE } from '../src/protocol.js';
 import { initConsole, handle as consoleHandle, logLine, rxTick } from './console.js';
+import { createMapPolicy } from './map-policy.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, '..');
@@ -18,6 +19,7 @@ const PORT = +(process.env.PORT || 8080);
 const HOST = process.env.HOST || '0.0.0.0';
 const MAX_ROOMS = +(process.env.MAX_ROOMS || 32);
 const STARTED_AT = Date.now();
+const mapPolicy = createMapPolicy(process.env.MAP_SETTINGS_FILE || path.join(ROOT, 'data', 'maps.json'));
 
 // 日志同时进两处：终端（原有习惯）与运维控制台的环形缓冲（实时滚动 + 事后回看）
 const log = (s, lv = 'info') => { console.log(`[${new Date().toISOString().slice(11, 19)}] ${s}`); logLine(s, lv); };
@@ -40,7 +42,15 @@ function createRoom(o) {
   log(`房间 ${room.id} 创建：${room.name}（${room.mapName} / 目标 ${room.goal} / 上限 ${room.max}）`);
   return room;
 }
-const roomList = () => [...rooms.values()].map((r) => r.info());
+const roomList = () => [...rooms.values()].filter((r) => mapPolicy.enabled(r.mapId)).map((r) => r.info());
+function setMapEnabled(id, enabled) {
+  const out = mapPolicy.set(id, enabled);
+  if (!out.err) {
+    const msg = JSON.stringify({ t: 'maps', list: out.maps, rooms: roomList() });
+    for (const ws of wss.clients) if (ws.readyState === 1 && ws.bufferedAmount < 4e6) ws.send(msg);
+  }
+  return out;
+}
 
 // ---------------- 运维台动作：请人离席 ----------------
 // 关键：removePlayer 只动房间名册，被移除者自己的连接什么都收不到，会卡在"还在对局里"的假象中。
@@ -104,6 +114,7 @@ class Sess {
     const ws = this.conn;
     if (!ws || ws.readyState !== 1) return;
     if (ws.bufferedAmount > 4e6) return; // 拥塞时丢快照，TCP 自行恢复
+    if (o.t === 'hi' || o.t === 'rooms') o = { ...o, maps: mapPolicy.list() };
     ws.send(JSON.stringify(o));
   }
   sendBin(buf) {
@@ -180,7 +191,9 @@ const handlers = {
   rooms(s) { s.send({ t: 'rooms', list: roomList() }); },
   create(s, m) {
     if (s.room) return s.err('已在房间中');
-    const room = createRoom(m || {});
+    const map = mapPolicy.pick(m.map);
+    if (!map) return s.err('该地图已禁用或不存在，请选择其他地图');
+    const room = createRoom({ ...m, map });
     if (!room) return s.err('服务器房间已满');
     if (!s.join(room, { primary: m && m.primary })) return s.err('房间已满');
     s.send({ t: 'joined', ticket: s.ticket, ...room.welcome(s.player) });
@@ -190,6 +203,7 @@ const handlers = {
     if (s.room) return s.err('已在房间中');
     const room = rooms.get(String(m && m.rid));
     if (!room) return s.err('房间不存在或已关闭');
+    if (!mapPolicy.enabled(room.mapId)) return s.err('该地图已禁用，现有对局仅供原玩家继续');
     if (!s.join(room, { primary: m.primary, team: m.team })) return s.err('房间已满');
     s.send({ t: 'joined', ticket: s.ticket, ...room.welcome(s.player) });
     log(`${s.name} 加入房间 ${room.id}`);
@@ -197,10 +211,11 @@ const handlers = {
   quick(s, m) {
     if (s.room) return s.err('已在房间中');
     const want = m && m.mode === 'pve' ? 'pve' : 'pvp'; // 匹配不跨模式，避免 PVE 玩家被丢进对抗日
-    const wantMap = m && m.map;
+    const wantMap = mapPolicy.pick(m && m.map);
+    if (!wantMap) return s.err('该地图已禁用或不存在，请选择其他地图');
     let best = null, alt = null;
     for (const r of rooms.values()) {
-      if (r.mode !== want || r.players.size >= r.max) continue;
+      if (r.mode !== want || r.players.size >= r.max || !mapPolicy.enabled(r.mapId)) continue;
       if (wantMap && r.mapId === wantMap && (!best || r.players.size > best.players.size)) { best = r; continue; }
       if (!alt || r.players.size > alt.players.size) alt = r; // 同图优先，其次凑人
     }
@@ -214,6 +229,7 @@ const handlers = {
     if (s.room || s.spect) return s.err('已在房间中');
     const room = rooms.get(String(m && m.rid));
     if (!room) return s.err('房间不存在或已关闭');
+    if (!mapPolicy.enabled(room.mapId)) return s.err('该地图已禁用，暂不接受新的观战');
     const sp = room.addSpectator(s);
     if (!sp) return s.err('观战席位已满');
     s.spect = sp; s.spectRoom = room;
@@ -292,6 +308,7 @@ const server = http.createServer((req, res) => {
   const u = (req.url || '/').split('?')[0];
   if (consoleHandle(req, res, u)) return;              // /admin 与 /api/console/*（详见 server/console.js）
   if (u === '/healthz') { res.writeHead(200, { 'content-type': 'text/plain' }); return res.end('ok'); }
+  if (u === '/api/maps') { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); return res.end(JSON.stringify({ maps: mapPolicy.list() })); }
   if (u === '/api/rooms') { res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' }); return res.end(JSON.stringify(roomList())); }
   if (u.startsWith('/assets/')) {
     const a = assetFile(u);
@@ -383,7 +400,7 @@ setInterval(() => {
 }, 15000);
 
 // ---------------- 启动 ----------------
-initConsole({ rooms, tickets, ipConns, wss, proto: PROTO_VERSION, maxRooms: MAX_ROOMS, startedAt: STARTED_AT, kick, closeRoom });
+initConsole({ rooms, tickets, ipConns, wss, proto: PROTO_VERSION, maxRooms: MAX_ROOMS, startedAt: STARTED_AT, kick, closeRoom, listMaps: mapPolicy.list, setMapEnabled });
 
 server.listen(PORT, HOST, () => {
   const ips = [];

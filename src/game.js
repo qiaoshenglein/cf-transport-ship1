@@ -36,6 +36,8 @@ export class Game {
   async init() {
     this.hud = new HUD(this);
     this.opts = this.hud.opts;
+    this.enabledMaps = new Set(Object.keys(MAPS));
+    await this.refreshMapAvailability();
     if (this.qs.get('q')) { this.opts.quality = this.qs.get('q'); this.opts.gfx = gfxDefaults(this.opts.quality); }
     this.autoLevel = 0;
     this.computeGfx();
@@ -47,7 +49,7 @@ export class Game {
     this.hud.loading(0.12, '生成船体 / 集装箱 / 地面纹理');
     await nextFrame(); await nextFrame();
     this.T = buildTextures(this.gfxEff.tex);
-    this.mapId = 'ship';
+    this.mapId = this.opts.map || 'ship';
     this.hud.loading(0.55, `搭建${MAPS[this.mapId].name}`);
     await nextFrame();
     this.world = new World();
@@ -98,6 +100,9 @@ export class Game {
     requestAnimationFrame(this.loop);
     if (this.qs.has('autostart')) setTimeout(() => this.startMatch(), 300);
     this.netGame = new NetGame(this);
+    this._mapPoll = setInterval(() => {
+      if (!this.playing && document.visibilityState === 'visible') this.refreshMapAvailability();
+    }, 5000);
     if (this.qs.has('autonet')) setTimeout(() => this.netGame.quickStart(), 400);
     window.__game = this;
   }
@@ -206,52 +211,83 @@ export class Game {
   }
 
   // ================= 流程 =================
-  openNetLobby() { this.netGame.openLobby(); }
-  startMatch() {
-    if (this.net) return;
-    const want = this.opts.map || 'ship';
-    // 换图要重建碰撞体与寻路网格，必须先完成再摆人，否则出生点落在旧图上
-    if (this.mapId !== want) { this.setMap(want).then(() => this.startMatch()); return; }
-    const o = this.opts;
-    audio.init(); audio.setVolumes({ master: o.vol }); audio.startAmbient(); audio.playUI('start');
-    for (const a of this.actors) this.renderer.scene.remove(a.soldier.root);
-    for (const t of this.tags) this.renderer.scene.remove(t.sprite);
-    for (const n of this.nades) this.renderer.scene.remove(n.mesh);
-    this.actors = []; this.nades = []; this.tags = []; this.timers = [];
-    this.score = { BL: 0, GR: 0 };
-    this.goal = o.goal; this.timeLeft = 600;
-    this.env.apply(o.tod);
-    const my = o.team, other = my === 'BL' ? 'GR' : 'BL';
-    const names = [...BOT_NAMES].sort(() => Math.random() - 0.5);
-    let id = 0;
-    this.player = new Player(this, { id: id++, name: '我', team: my });
-    this.player.primary = o.primary;
-    this.player.bind(document.getElementById('c'));
-    this.actors.push(this.player);
-    const N = o.size;
-    const prim = (team, i) => {
-      if (i === 1 && N >= 4) return 'awm';
-      if (i === 3 && N >= 6) return 'mp5';
-      if (i === 5) return team === 'BL' ? 'm4a1' : 'ak47';
-      return team === 'BL' ? 'ak47' : 'm4a1';
-    };
-    for (const team of [my, other]) {
-      const count = team === my ? N - 1 : N;
-      for (let i = 0; i < count; i++) {
-        const b = new Bot(this, { id: id++, name: names.pop() || 'Bot' + id, team, diff: o.diff });
-        b.primary = prim(team, team === my ? i + 1 : i);
-        this.actors.push(b);
-        if (team === my) this.addTag(b);
+  refreshMapAvailability() {
+    if (location.protocol === 'file:') return Promise.resolve(true);
+    if (this._mapFetch) return this._mapFetch;
+    const abort = new AbortController(), timeout = setTimeout(() => abort.abort(), 3000);
+    this._mapFetch = fetch('/api/maps', { cache: 'no-store', signal: abort.signal }).then(async (res) => {
+      if (!res.ok) return false;
+      const data = await res.json();
+      if (!Array.isArray(data.maps)) return false;
+      this.enabledMaps = new Set(data.maps.filter((m) => m.enabled && Object.hasOwn(MAPS, m.id)).map((m) => m.id));
+      if (!this.enabledMaps.has(this.opts.map)) {
+        this.opts.map = this.enabledMaps.values().next().value || 'ship';
+        this.hud.saveOpts();
       }
-    }
-    for (const a of this.actors) this.spawnActor(a, true);
-    this.vm.setTeam(my); this.vm.equip(this.player.weapon.id, 0.6);
-    this.hud.slots(this.player.inv, 0);
-    this.playing = true; this.paused = false; this.ended = false;
-    this.hud.show(null);
-    this.lock();
-    setTimeout(() => audio.announce('Go go go!'), 400);
-    this.hud.toast(`团队竞技 · 率先达到 <b style="color:#f5b321">${this.goal}</b> 击杀的队伍获胜`, 3.5);
+      for (const b of document.querySelectorAll('#menu [data-k="map"] button')) {
+        b.disabled = !this.enabledMaps.has(b.dataset.v);
+        b.title = b.disabled ? '此地图已被管理员禁用' : MAPS[b.dataset.v].desc;
+        b.classList.toggle('on', b.dataset.v === this.opts.map);
+      }
+      for (const id of ['btnStart', 'btnAgain']) {
+        const b = document.getElementById(id); if (b) b.disabled = !this.enabledMaps.size;
+      }
+      return true;
+    }).catch(() => false).finally(() => { clearTimeout(timeout); this._mapFetch = null; });
+    return this._mapFetch;
+  }
+  openNetLobby() { this.netGame.openLobby(); }
+  async startMatch() {
+    if (this.net) return;
+    if (this._startingMatch) return;
+    this._startingMatch = true;
+    try {
+      if (!await this.refreshMapAvailability()) { this.hud.toast('无法读取地图开放状态，请稍后重试', 3); return; }
+      const want = this.opts.map || 'ship';
+      if (!this.enabledMaps.has(want)) { this.hud.toast('暂无可用地图', 3); return; }
+      // 换图要重建碰撞体与寻路网格，必须先完成再摆人，否则出生点落在旧图上
+      if (this.mapId !== want) await this.setMap(want);
+      const o = this.opts;
+      audio.init(); audio.setVolumes({ master: o.vol }); audio.startAmbient(); audio.playUI('start');
+      for (const a of this.actors) this.renderer.scene.remove(a.soldier.root);
+      for (const t of this.tags) this.renderer.scene.remove(t.sprite);
+      for (const n of this.nades) this.renderer.scene.remove(n.mesh);
+      this.actors = []; this.nades = []; this.tags = []; this.timers = [];
+      this.score = { BL: 0, GR: 0 };
+      this.goal = o.goal; this.timeLeft = 600;
+      this.env.apply(o.tod);
+      const my = o.team, other = my === 'BL' ? 'GR' : 'BL';
+      const names = [...BOT_NAMES].sort(() => Math.random() - 0.5);
+      let id = 0;
+      this.player = new Player(this, { id: id++, name: '我', team: my });
+      this.player.primary = o.primary;
+      this.player.bind(document.getElementById('c'));
+      this.actors.push(this.player);
+      const N = o.size;
+      const prim = (team, i) => {
+        if (i === 1 && N >= 4) return 'awm';
+        if (i === 3 && N >= 6) return 'mp5';
+        if (i === 5) return team === 'BL' ? 'm4a1' : 'ak47';
+        return team === 'BL' ? 'ak47' : 'm4a1';
+      };
+      for (const team of [my, other]) {
+        const count = team === my ? N - 1 : N;
+        for (let i = 0; i < count; i++) {
+          const b = new Bot(this, { id: id++, name: names.pop() || 'Bot' + id, team, diff: o.diff });
+          b.primary = prim(team, team === my ? i + 1 : i);
+          this.actors.push(b);
+          if (team === my) this.addTag(b);
+        }
+      }
+      for (const a of this.actors) this.spawnActor(a, true);
+      this.vm.setTeam(my); this.vm.equip(this.player.weapon.id, 0.6);
+      this.hud.slots(this.player.inv, 0);
+      this.playing = true; this.paused = false; this.ended = false;
+      this.hud.show(null);
+      this.lock();
+      setTimeout(() => audio.announce('Go go go!'), 400);
+      this.hud.toast(`团队竞技 · 率先达到 <b style="color:#f5b321">${this.goal}</b> 击杀的队伍获胜`, 3.5);
+    } finally { this._startingMatch = false; }
   }
   // opt: 名牌文案 / 配色 / 尺寸（BOSS 用大号的红名，队友仍是默认小队色）
   addTag(b, opt) {
@@ -385,7 +421,7 @@ export class Game {
       this.applyGfx();
     }
     if (k === 'team' && this.vm) this.vm.setTeam(v);
-    if (k === 'map') this.setMap(v);   // 菜单里换图，背景立刻变成那张图
+    if (k === 'map' && this.enabledMaps.has(v)) this.setMap(v);   // 菜单里换图，背景立刻变成那张图
   }
   endMatch() {
     this.ended = true; this.playing = false;

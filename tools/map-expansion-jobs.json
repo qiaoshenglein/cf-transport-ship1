@@ -1,0 +1,294 @@
+{
+  "version": 1,
+  "apiBase": "http://127.0.0.1:8790",
+  "batch": "map-expansion-20261024",
+  "phase": "blocked-api-token-expired",
+  "faceCount": 50000,
+  "maps": [
+    {
+      "id": "rail",
+      "name": "山城车站",
+      "theme": "旧砖站房、铁路货场、山城工业风",
+      "layout": "88×48 米；中央货运场、站台侧路、维修通道；机车与货车形成视线切割。"
+    },
+    {
+      "id": "quarry",
+      "name": "赤岩矿场",
+      "theme": "红色岩壁、黄色重型机械、矿石加工设施",
+      "layout": "88×52 米；中央装卸场、碎石机侧道、岩壁环线；机械作为地标和掩体。"
+    },
+    {
+      "id": "garden",
+      "name": "竹庭别院",
+      "theme": "竹林、木亭、石桥、灯笼组成的日式庭院",
+      "layout": "80×48 米；庭院主路、竹林侧径、石桥水庭；保证 AI 有连续地面通路。"
+    }
+  ],
+  "sharedRequirements": "Realistic stylized tactical FPS environment asset. Single complete isolated object, centered at origin, upright, coherent real-world proportions. Optimized game-ready geometry with baked PBR textures. No people, no logos, no readable text, no surrounding terrain, no display plinth, no detached floating parts. Detailed silhouette, restrained weathering, clean geometry. Static prop, no rig or animation required.",
+  "models": [
+    {
+      "id": "rail-locomotive",
+      "map": "rail",
+      "label": "柴油机车",
+      "targetSizeM": [
+        11,
+        4.2,
+        3.1
+      ],
+      "usage": "中央货场主地标；实体掩体，车体两侧预留绕行空间。",
+      "prompt": "One compact vintage diesel shunting locomotive, dark forest green painted steel with worn cream safety stripes, detailed cab with dark windows, long engine hood, ventilation grilles, heavy steel buffer beams, visible railway wheel bogies. Authentic old industrial railway proportions, approximately eleven meters long. No railway tracks or ground. Broad recognizable silhouette viewed from ground level. Closed cabin.",
+      "submittedAt": "2026-10-24T07:08:17.01Z",
+      "outputName": "rail-locomotive.glb",
+      "jobId": "dfaa4a89-209a-454d-84da-80129d87ab3f",
+      "status": "error",
+      "statusPath": "/v1/jobs/dfaa4a89-209a-454d-84da-80129d87ab3f",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "rail-boxcar",
+      "map": "rail",
+      "label": "封闭货运车厢",
+      "targetSizeM": [
+        10,
+        3.8,
+        3
+      ],
+      "usage": "沿两条轨道复用，形成长短交火线和侧翼通路。",
+      "prompt": "One vintage enclosed railway freight boxcar, rust red corrugated steel sides, large closed sliding door, steel undercarriage, two detailed black wheel bogies, slightly curved roof, worn paint and restrained rust. Approximately ten meters long and three meters wide. No locomotive, no railway tracks, no ground. Closed solid freight body suitable as cover in a tactical game.",
+      "submittedAt": "2026-10-24T07:08:17.078Z",
+      "outputName": "rail-boxcar.glb",
+      "jobId": "31e97bcb-50c0-42de-91bb-4d8db335fe24",
+      "status": "error",
+      "statusPath": "/v1/jobs/31e97bcb-50c0-42de-91bb-4d8db335fe24",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "rail-station",
+      "map": "rail",
+      "label": "砖砌站务房",
+      "targetSizeM": [
+        9,
+        5.8,
+        5
+      ],
+      "usage": "出生区外侧和地图远景；不作为需要穿行的室内空间。",
+      "prompt": "One small freestanding historic railway station service building, rectangular red brick structure, aged cream stone window surrounds, dark slate pitched roof, a small brick chimney, closed dark green doors, closed tall windows, shallow entrance canopy supported by two iron brackets. Complete exterior on all four sides. Approximately nine meters wide, five meters deep. No platform, no landscape, no signs, no furniture outside.",
+      "submittedAt": "2026-10-24T07:08:17.082Z",
+      "outputName": "rail-station.glb",
+      "jobId": "28bcb293-e8ab-46ce-8de1-43d413713cce",
+      "status": "error",
+      "statusPath": "/v1/jobs/28bcb293-e8ab-46ce-8de1-43d413713cce",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "rail-signal",
+      "map": "rail",
+      "label": "铁路信号架",
+      "targetSizeM": [
+        8,
+        6,
+        1.2
+      ],
+      "usage": "跨轨道标识与站台轮廓，主通路保持足够净空。",
+      "prompt": "One industrial railway signal gantry spanning two tracks, weathered dark galvanized steel truss crossbeam on two sturdy vertical steel columns, compact railway signal heads with circular red and amber glass lenses, a narrow maintenance walkway and a ladder attached to one support. Complete freestanding structure. Eight meters span, six meters tall. No rails, no terrain, no hanging cables beyond the structure.",
+      "submittedAt": "2026-10-24T07:08:17.087Z",
+      "outputName": "rail-signal.glb",
+      "jobId": "6b1417ba-4851-403e-961c-67f836efbb6d",
+      "status": "error",
+      "statusPath": "/v1/jobs/6b1417ba-4851-403e-961c-67f836efbb6d",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "quarry-excavator",
+      "map": "quarry",
+      "label": "履带挖掘机",
+      "targetSizeM": [
+        9,
+        4.5,
+        3.5
+      ],
+      "usage": "矿场主地标，放在中央装卸区边缘，独立碰撞代理。",
+      "prompt": "One heavy tracked quarry excavator, weathered safety yellow body, dark steel crawler tracks, enclosed cab with dark blue windows, realistic hydraulic cylinders and hoses. Excavator arm folded close to the machine, bucket lowered near the front tracks, compact stable parked pose. Red sandstone dust on lower panels. No operator, no ground, no rocks, no logo. Full complete machine with clear silhouette.",
+      "submittedAt": "2026-10-24T07:08:17.09Z",
+      "outputName": "quarry-excavator.glb",
+      "jobId": "f66087b0-d3d6-4354-9f3d-26a0c9bcfac6",
+      "status": "error",
+      "statusPath": "/v1/jobs/f66087b0-d3d6-4354-9f3d-26a0c9bcfac6",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "quarry-truck",
+      "map": "quarry",
+      "label": "矿用自卸车",
+      "targetSizeM": [
+        8,
+        4.5,
+        4.2
+      ],
+      "usage": "装卸场大型掩体，车头和车尾提供不同交火角度。",
+      "prompt": "One medium heavy quarry haul dump truck, weathered mustard yellow paint, six massive black off-road tires, boxy driver cab with dark windows, broad empty steel dump bed fully lowered, steel front grille, ladder steps, dusty red sandstone grime. Parked level static pose. Complete vehicle, no rocks inside bed, no driver, no road, no ground, no logo.",
+      "submittedAt": "2026-10-24T07:08:17.094Z",
+      "outputName": "quarry-truck.glb",
+      "jobId": "ef433db8-bc9d-435a-ace2-65af95eb4a45",
+      "status": "error",
+      "statusPath": "/v1/jobs/ef433db8-bc9d-435a-ace2-65af95eb4a45",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "quarry-crusher",
+      "map": "quarry",
+      "label": "碎石筛分设备",
+      "targetSizeM": [
+        10,
+        5,
+        4
+      ],
+      "usage": "侧路设备区地标，底座封闭为掩体，避免视觉缝隙与判定冲突。",
+      "prompt": "One compact stationary quarry rock crushing and screening machine, dark teal steel processing body on a solid low rectangular chassis, wide receiving hopper, large mesh screening box, one short folded discharge conveyor kept inside the footprint, yellow safety handrails, thick structural beams, weathered dusty red rock grime. Approximately ten meters long. Complete standalone machine, compact silhouette, no surrounding rock piles, no ground, no people.",
+      "submittedAt": "2026-10-24T07:08:17.097Z",
+      "outputName": "quarry-crusher.glb",
+      "jobId": "5c915df8-62cf-4dd1-b466-0e194305b4ba",
+      "status": "error",
+      "statusPath": "/v1/jobs/5c915df8-62cf-4dd1-b466-0e194305b4ba",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "quarry-generator",
+      "map": "quarry",
+      "label": "矿区发电机组",
+      "targetSizeM": [
+        3.6,
+        2.3,
+        1.8
+      ],
+      "usage": "复用的小型掩体，填充维修区与转角细节。",
+      "prompt": "One industrial diesel generator unit in a closed rectangular weatherproof housing, faded off-white panels with dark teal access doors, black ventilation grilles, a small exhaust pipe on top, thick steel skid base, recessed control panel covered with dark glass, modest rust and red dust. Approximately three and a half meters long, two meters tall. No loose cables, no ground, no readable writing, no people.",
+      "submittedAt": "2026-10-24T07:08:17.101Z",
+      "outputName": "quarry-generator.glb",
+      "jobId": "dff89d63-0bed-4025-8e00-8b530d8e8f60",
+      "status": "error",
+      "statusPath": "/v1/jobs/dff89d63-0bed-4025-8e00-8b530d8e8f60",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "garden-pavilion",
+      "map": "garden",
+      "label": "木构庭院亭",
+      "targetSizeM": [
+        5.5,
+        5,
+        5.5
+      ],
+      "usage": "水庭主地标，屋顶和立柱分别匹配碰撞，保留宽敞开口。",
+      "prompt": "One traditional Japanese square garden pavilion, four substantial warm dark cedar wooden pillars, elegant dark gray tiled hipped roof with gently curved eaves, detailed exposed wooden joinery, low square stone foundation with one shallow step. Open on all four sides with no railings, no benches, no hanging ornaments, no walls. Approximately five and a half meters wide and five meters tall. Complete freestanding architecture, no plants, no garden terrain.",
+      "submittedAt": "2026-10-24T07:08:17.104Z",
+      "outputName": "garden-pavilion.glb",
+      "jobId": "d8d8746a-2420-464d-bc3c-af63343ab114",
+      "status": "error",
+      "statusPath": "/v1/jobs/d8d8746a-2420-464d-bc3c-af63343ab114",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "garden-bridge",
+      "map": "garden",
+      "label": "低拱石桥",
+      "targetSizeM": [
+        7,
+        1.7,
+        3.8
+      ],
+      "usage": "浅水庭院景观；按模型尺寸设置可行走桥面，旁边保留地面绕行路线。",
+      "prompt": "One low gently arched Japanese garden stone footbridge, broad walkway paved with aged pale granite slabs, shallow rise suitable for walking, sturdy low stone parapets with simple square posts on both sides, lightly mossy joints. Seven meters long, nearly four meters wide, gentle compact profile. Complete bridge including underside arch and both ends, no water, no riverbanks, no terrain, no plants.",
+      "submittedAt": "2026-10-24T07:08:17.11Z",
+      "outputName": "garden-bridge.glb",
+      "jobId": "fedfe7b3-77cb-47ad-b211-93fa80cdf197",
+      "status": "error",
+      "statusPath": "/v1/jobs/fedfe7b3-77cb-47ad-b211-93fa80cdf197",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "garden-lantern",
+      "map": "garden",
+      "label": "庭院石灯笼",
+      "targetSizeM": [
+        1.1,
+        2.1,
+        1.1
+      ],
+      "usage": "沿庭院与竹林路径复用，作为方向提示与近景细节。",
+      "prompt": "One traditional Japanese stone garden lantern, weathered pale gray granite pedestal, square hollow light chamber with a soft warm amber interior, wide pagoda-shaped stone roof and small rounded finial. Slight moss along lower edges. Two meters tall, stable broad stone foot, complete freestanding object. No garden, no ground patch, no vegetation, no text, no separate accessories.",
+      "submittedAt": "2026-10-24T07:08:17.113Z",
+      "outputName": "garden-lantern.glb",
+      "jobId": "129a1320-7f27-4d13-90d5-3783996c43de",
+      "status": "error",
+      "statusPath": "/v1/jobs/129a1320-7f27-4d13-90d5-3783996c43de",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    },
+    {
+      "id": "garden-bamboo",
+      "map": "garden",
+      "label": "竹丛",
+      "targetSizeM": [
+        3.2,
+        6,
+        3.2
+      ],
+      "usage": "地图边缘和实心花坛中成组复用，主战斗通道保持清晰。",
+      "prompt": "One compact natural cluster of six upright bamboo stalks with jointed olive green stems, varied heights between four and six meters, graceful leafy branches concentrated in the upper half. Dense but readable clusters of narrow dark green bamboo leaves. Visible clean stalk bases at the same level, no pot, no soil mound, no terrain, no surrounding plants. Optimized game environment foliage with solid leaf geometry, avoid oversized rectangular cards.",
+      "submittedAt": "2026-10-24T07:08:17.116Z",
+      "outputName": "garden-bamboo.glb",
+      "jobId": "15eb3309-2fc4-495e-9286-1ebb72d44203",
+      "status": "error",
+      "statusPath": "/v1/jobs/15eb3309-2fc4-495e-9286-1ebb72d44203",
+      "generationError": {
+        "code": "auth",
+        "message": "鉴权失败：令牌无效或已过期（HTTP 401/403）。 Token 已过期"
+      },
+      "taskId": null
+    }
+  ]
+}

@@ -13,7 +13,8 @@
     "test:asset": "node test/assetlab.mjs",
     "test:glb": "node test/boss-glb.mjs",
     "test:gfx": "node test/gfx.mjs",
-    "test:polar": "node test/polar.mjs"
+    "test:polar": "node test/polar.mjs",
+    "test:maps-admin": "node test/map-policy.mjs"
   },
   "dependencies": {
     "ws": "^8.22.0",

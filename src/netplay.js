@@ -93,7 +93,12 @@ export class NetGame {
   }
 
   onCtl(m) {
+    if (Array.isArray(m.maps)) this.setMapAvailability(m.maps);
     switch (m.t) {
+      case 'maps':
+        this.setMapAvailability(m.list);
+        if (this.state === 'lobby') this.renderRooms(m.rooms || []);
+        break;
       case 'hi':
         if (this.state === 'lobby') this.renderRooms(m.rooms || []);
         this.setStatus('');
@@ -187,6 +192,19 @@ export class NetGame {
 
   // ================= 大厅 =================
   playerName() { try { return localStorage.getItem('cf_net_name') || '士兵' + (100 + ((Math.random() * 900) | 0)); } catch (e) { return '士兵'; } }
+  setMapAvailability(rows) {
+    if (Array.isArray(rows)) this.availableMaps = new Set(rows.filter((r) => r.enabled && MAP_IDS.includes(r.id)).map((r) => r.id));
+    if (!this.lobby || !this.availableMaps) return;
+    const o = this.lobbyOpts;
+    if (!this.availableMaps.has(o.map)) o.map = this.availableMaps.values().next().value || '';
+    for (const b of this.lobby.querySelectorAll('[data-kg="map"] button')) {
+      b.disabled = !this.availableMaps.has(b.dataset.v);
+      b.title = b.disabled ? '此地图已被管理员禁用' : MAPS[b.dataset.v].desc;
+      b.classList.toggle('on', b.dataset.v === o.map);
+    }
+    this.lobby.querySelector('#mapDesc').textContent = MAPS[o.map]?.desc || '暂无可用地图';
+    for (const id of ['netQuick', 'netCreate']) this.lobby.querySelector('#' + id).disabled = !this.availableMaps.size;
+  }
   ensureLobby() {
     if (this.lobby) return this.lobby;
     const d = document.createElement('div');
@@ -216,6 +234,7 @@ export class NetGame {
 </div>`;
     document.getElementById('ui').appendChild(d);
     const o = { goal: 50, max: 16, mode: 'pvp', diff: 'normal', map: 'ship' };
+    this.lobbyOpts = o;
     const pveOpt = d.querySelector('#pveOpt');
     const mapDesc = d.querySelector('#mapDesc');
     const goalInp = d.querySelector('#netGoal');
@@ -249,7 +268,9 @@ export class NetGame {
     });
     d.querySelector('#netBack').addEventListener('click', () => this.closeLobby());
     this.roomList = d.querySelector('#roomList');
-    return (this.lobby = d);
+    this.lobby = d;
+    this.setMapAvailability();
+    return d;
   }
   saveName() { const i = this.lobby && this.lobby.querySelector('#netName'); if (i) { try { localStorage.setItem('cf_net_name', i.value.trim().slice(0, 12) || '士兵'); } catch (e) { /* 忽略 */ } } }
   setStatus(s) { const el = this.lobby && this.lobby.querySelector('#netStatus'); if (el) el.textContent = s || ' '; }
