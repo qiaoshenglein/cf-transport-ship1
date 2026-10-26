@@ -1,5 +1,5 @@
 // BOSS 登场帧时探针：真实（软件）WebGL 下量"基线 vs 母体登场"，定位卡死到底是渲染、重编译还是 JS
-// 运行：node test/bossperf.mjs [ship|town|desert] [宽] [高]   默认 1600×900（贴近玩家实际分辨率）
+// 运行：node test/bossperf.mjs [ship|polar] [宽] [高]   默认 1600×900（贴近玩家实际分辨率）
 import { chromium } from 'playwright-core';
 
 const map = process.argv[2] || 'ship';

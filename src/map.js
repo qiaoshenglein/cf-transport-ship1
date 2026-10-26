@@ -1,6 +1,6 @@
 // 运输船地图构建
 // 坐标：X 沿船长方向（-X 船尾/上层建筑/潜伏者出生点，+X 船头/保卫者出生点），Z 沿船宽，Y 向上，甲板 Y=0，海面 Y=-7.5
-// 通用几何 / 碰撞 / 预制件在 src/mapkit.js，沙漠灰与黑色城镇共用
+// 通用几何 / 碰撞 / 预制件在 src/mapkit.js，运输船与极地中继站共用
 import * as THREE from 'three';
 import { SIGN_UV } from './textures.js';
 import { makeKit, CH, CW, L20, L40 } from './mapkit.js';

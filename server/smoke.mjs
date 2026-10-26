@@ -661,7 +661,7 @@ console.log('[7] BOSS 体型与命中盒');
 }
 
 // ---------------- 8. 多地图：每张图都能建房、寻路、放怪、发补给 ----------------
-console.log('\n[8] 多地图（运输船 / 沙漠灰 / 黑色城镇）');
+console.log('\n[8] 多地图（运输船 / 极地中继站）');
 for (const mapId of MAP_IDS) {
   const mk = (n) => ({ name: n, conn: { readyState: 1 }, msgs: [], send(o) { this.msgs.push(o); }, sendBin() { } });
   const room = new Room('t8' + mapId, { goal: 100, max: 8, mode: 'pve', diff: 'normal', map: mapId, onEmpty() { } });

@@ -50,9 +50,9 @@ try {
     await page.waitForFunction(() => { const n = window.__game.netGame; return n.inMatch && [...n.remotes.values()].some(a => a.soldier.human && a.alive); });
     assert.equal(await page.evaluate(() => { const n = window.__game.netGame; return !n.me.soldier.human && [...n.remotes.values()].every(a => a.soldier.human.team === a.team); }), true);
   }
-  await b.evaluate(() => window.__game.netGame.leave());
+  await b.evaluate(() => window.__game.quitToMenu());
   await a.waitForFunction(() => window.__game.netGame.remotes.size === 0);
-  await a.evaluate(() => window.__game.netGame.leave());
+  await a.evaluate(() => window.__game.quitToMenu());
   assert.deepEqual(errors, []);
   console.log('PASS two real game clients see new remote models, local bodies excluded, leaving removes models, no page errors');
 } catch (e) { console.error(e); process.exitCode = 1; }

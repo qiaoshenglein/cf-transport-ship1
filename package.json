@@ -14,9 +14,11 @@
     "test:glb": "node test/boss-glb.mjs",
     "test:gfx": "node test/gfx.mjs",
     "test:polar": "node test/polar.mjs",
+    "test:newmaps": "node test/newmaps.mjs",
     "test:maps-admin": "node test/map-policy.mjs",
     "test:soldiers": "node test/soldiers.mjs",
-    "test:tripo": "node test/tripo-soldiers.mjs"
+    "test:tripo": "node test/tripo-soldiers.mjs",
+    "test:soldier-game": "node test/soldier-game.mjs"
   },
   "dependencies": {
     "ws": "^8.22.0",

@@ -1,5 +1,5 @@
 // 地图通用建造层：合批几何 + 权威碰撞体 + 常用预制件
-// 运输船 / 沙漠灰 / 黑色城镇 共用同一套 API，服务端 headless 复用时贴图全为 null，只产出碰撞体
+// 运输船 / 极地中继站 共用同一套 API，服务端 headless 复用时贴图全为 null，只产出碰撞体
 import * as THREE from 'three';
 import { mulberry32 } from './textures.js';
 

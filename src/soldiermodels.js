@@ -127,7 +127,8 @@ export function attachSoldierModel(sol) {
     mixer.stopAllAction();
   }
   for (const [bone, value] of rest) { bone.position.copy(value.p); bone.quaternion.copy(value.q); bone.scale.copy(value.s); }
-  sol.human = { src, bones, mats, rest, mapping, mixer, actions, grip, baseY: src.position.y, deathOffset: entry.deathOffset * scale, current: null, procedural: 0, team: sol.team };
+  const animated = new Map([...rest].map(([b, v]) => [b, { p: v.p.clone(), q: v.q.clone(), s: v.s.clone() }]));
+  sol.human = { src, bones, mats, rest, animated, mapping, mixer, actions, grip, baseY: src.position.y, deathOffset: entry.deathOffset * scale, current: null, procedural: 0, team: sol.team };
   sol.root.add(src);
   sol.setBodyVisible(sol.bodyVisible);
   return true;
@@ -177,8 +178,12 @@ export function updateSoldierModel(sol, dt, st = {}) {
     h.current = want;
   }
   if (moving && h.actions[want]) h.actions[want].setEffectiveTimeScale(THREE.MathUtils.clamp(speed / (want === 'run' ? 5 : 2.3), .55, 1.65));
-  for (const [bone, value] of h.rest) { bone.position.copy(value.p); bone.quaternion.copy(value.q); bone.scale.copy(value.s); }
+  // Restore the previous *animation* pose before mixing, not the bind pose.
+  // Three skips writing unchanged tracks; resetting to rest would make clamped
+  // death clips snap back to T-pose and would feed procedural IK into blending.
+  for (const [bone, value] of h.animated) { bone.position.copy(value.p); bone.quaternion.copy(value.q); bone.scale.copy(value.s); }
   h.mixer.update(dt);
+  for (const [bone, value] of h.animated) { value.p.copy(bone.position); value.q.copy(bone.quaternion); value.s.copy(bone.scale); }
   sol.root.updateWorldMatrix(true, false);
   // SkinnedMesh.updateMatrixWorld also refreshes bindMatrixInverse. The generic
   // updateWorldMatrix path would apply a moving corpse's root translation twice.
@@ -230,6 +235,10 @@ export function resetSoldierModel(sol) {
   const h = sol.human;
   if (!h) return;
   h.mixer.stopAllAction(); h.current = null; h.procedural = 0;
+  for (const [bone, value] of h.rest) {
+    bone.position.copy(value.p); bone.quaternion.copy(value.q); bone.scale.copy(value.s);
+    const animated = h.animated.get(bone); animated.p.copy(value.p); animated.q.copy(value.q); animated.s.copy(value.s);
+  }
   for (const mat of h.mats) { mat.opacity = 1; mat.transparent = false; }
 }
 

@@ -35,6 +35,26 @@ async function client(base) {
   return c;
 }
 try {
+  assert.deepEqual(MAP_IDS, ['ship', 'polar', 'bazaar', 'depot', 'turbine', 'harbor']);
+  const legacyFile = path.join(dir, 'legacy.json');
+  try {
+    fs.writeFileSync(legacyFile, JSON.stringify({ version: 1, disabled: ['polar', 'desert'] }));
+    assert.equal(createMapPolicy(legacyFile).enabled('polar'), false);
+    assert.deepEqual(JSON.parse(fs.readFileSync(legacyFile)), { version: 2, disabled: ['polar'] });
+    fs.writeFileSync(legacyFile, JSON.stringify({ version: 2, disabled: ['ship', 'polar'] }));
+    const expanded = createMapPolicy(legacyFile);
+    assert.equal(expanded.enabled('ship'), false);
+    assert.equal(expanded.enabled('polar'), false);
+    for (const id of ['bazaar', 'depot', 'turbine', 'harbor']) assert.equal(expanded.enabled(id), true);
+    fs.writeFileSync(legacyFile, JSON.stringify({ version: 1, disabled: MAP_IDS }));
+    const migrated = createMapPolicy(legacyFile);
+    assert.equal(migrated.enabled('ship'), true);
+    assert.equal(migrated.enabled('polar'), false);
+    assert.equal(createMapPolicy(legacyFile).enabled('ship'), true);
+    fs.writeFileSync(legacyFile, JSON.stringify({ version: 2, disabled: MAP_IDS }));
+    assert.throws(() => createMapPolicy(legacyFile), /至少启用/);
+  } finally { fs.rmSync(legacyFile, { force: true }); }
+  console.log('PASS 六张地图注册、旧禁用配置迁移并保证可用地图');
   for (let i = 0; !mod.boundPort() && i < 100; i++) await sleep(20);
   const base = `http://127.0.0.1:${mod.boundPort()}`;
   const headers = { 'content-type': 'application/json', 'x-admin-token': process.env.ADMIN_TOKEN };
@@ -50,11 +70,30 @@ try {
   assert.equal((await toggle('polar', 'false')).status, 400);
   console.log('PASS 默认全开、地图参数校验与后台鉴权');
   const A = await client(base), B = await client(base);
+  for (const map of ['desert', 'town', 'inferno', 'aztec', 'nuke']) {
+    assert.equal((await toggle(map, true)).status, 400);
+    for (const t of ['create', 'quick']) {
+      B.send({ t, map });
+      assert.match((await B.next((m) => m.t === 'err')).m, /不存在/);
+    }
+  }
+  assert.deepEqual((await maps()).map((m) => m.id), MAP_IDS);
+  console.log('PASS 已移除地图不可重新启用、建房或匹配');
+  for (const map of ['bazaar', 'depot', 'turbine', 'harbor']) {
+    assert.equal((await toggle(map, false)).status, 200);
+    B.send({ t: 'create', map });
+    assert.match((await B.next((m) => m.t === 'err')).m, /禁用/);
+    assert.equal((await toggle(map, true)).status, 200);
+    B.send({ t: 'create', map });
+    assert.equal((await B.next((m) => m.t === 'joined')).room.map, map);
+    B.send({ t: 'leave' }); await B.next((m) => m.t === 'hi');
+  }
+  console.log('PASS 四张新地图分别禁用、启用与真实联机建房');
   A.send({ t: 'create', map: 'polar', mode: 'pvp' });
   const joined = await A.next((m) => m.t === 'joined');
   const room = mod.rooms.get(joined.room.id), tick = room.tick;
   assert.equal((await toggle('polar', false)).status, 200);
-  const push = await B.next((m) => m.t === 'maps');
+  const push = await B.next((m) => m.t === 'maps' && m.list.some((r) => r.id === 'polar' && !r.enabled));
   assert.equal(push.list.find((m) => m.id === 'polar').enabled, false);
   assert.equal(createMapPolicy(file).enabled('polar'), false);
   assert.equal((await maps()).find((m) => m.id === 'polar').enabled, false);
@@ -80,17 +119,23 @@ try {
   await admin.goto(base + '/admin');
   const button = admin.locator('button[data-map="polar"]');
   await button.waitFor(); assert.equal(await button.textContent(), '启用');
+  assert.equal(await admin.locator('button[data-map]').count(), MAP_IDS.length);
   await button.click();
   await admin.waitForFunction(() => document.querySelector('[data-map="polar"]')?.textContent === '禁用');
   assert.equal((await maps()).find((m) => m.id === 'polar').enabled, true);
   await admin.screenshot({ path: 'test/_map_admin.png' });
 
   const game = await context.newPage(); game.on('pageerror', (e) => errors.push(e.message));
-  await game.addInitScript(() => localStorage.setItem('cf_ship_opts', JSON.stringify({ quality: 'low', map: 'polar', size: 2 })));
+  await game.addInitScript(() => localStorage.setItem('cf_ship_opts', JSON.stringify({ quality: 'low', map: 'desert', size: 2 })));
   await game.goto(base + '/?nolock=1');
   await game.waitForFunction(() => !!window.__game, null, { timeout: 60000 });
+  assert.equal(await game.evaluate(() => window.__game.opts.map), 'ship');
+  assert.equal(await game.evaluate(() => JSON.parse(localStorage.getItem('cf_ship_opts')).map), 'ship');
+  assert.deepEqual(await game.locator('#menu [data-k="map"] button').evaluateAll((buttons) => buttons.map((b) => b.dataset.v)), MAP_IDS);
+  await game.locator('#menu [data-k="map"] [data-v="polar"]').click();
   await game.locator('#btnNet').click();
   await game.waitForFunction(() => window.__game.netGame.availableMaps?.has('polar'));
+  assert.deepEqual(await game.locator('#lobby [data-kg="map"] button').evaluateAll((buttons) => buttons.map((b) => b.dataset.v)), MAP_IDS);
   await game.locator('#lobby [data-kg="map"] [data-v="polar"]').click();
   await button.click();
   await game.waitForFunction(() => document.querySelector('#lobby [data-kg="map"] [data-v="polar"]')?.disabled);

@@ -73,7 +73,7 @@ export class Game {
     this.vm = new ViewModel(this.renderer.vmScene, this.T, this.opts.team);
     this.hud.loading(0.8, '计算寻路网格');
     await nextFrame();
-    this.nav = new NavGrid(this.world, ...def.bounds, 0.5, 0.42);
+    this.nav = new NavGrid(this.world, ...def.bounds, def.navCell || 0.5, 0.42);
     this.hud.buildRadar(this.world, def);
     this.hud.loading(0.88, '武器图标 / 预编译着色器');
     await nextFrame();
@@ -122,7 +122,7 @@ export class Game {
     this._mapRoot = root;
     this.map = def.build(root, this.T, this.world, {});
     this.map.root = root;
-    this.nav = new NavGrid(this.world, ...def.bounds, 0.5, 0.42);
+    this.nav = new NavGrid(this.world, ...def.bounds, def.navCell || 0.5, 0.42);
     this.hud.buildRadar(this.world, def);
     this.env.setMap(def);
     this.env.apply(this.opts.tod || this.env.tod || 'day');
@@ -736,9 +736,10 @@ export class Game {
     const active = this.playing && !this.paused;
     if (active) this.simulate(dt);
     else if (!this.playing) {
-      // 菜单：环绕运输船
+      // 环绕范围随地图扩大，超大港区预览不再钻进仓库。
       const t = this.realTime * 0.045;
-      cam.position.set(Math.cos(t) * 46 - 6, 13 + Math.sin(t * 2.1) * 3, Math.sin(t) * 34);
+      const previewScale = Math.max(1, mapOf(this.mapId).radar.w / 84);
+      cam.position.set(Math.cos(t) * 46 * previewScale - 6, (13 + Math.sin(t * 2.1) * 3) * previewScale, Math.sin(t) * 34 * previewScale);
       cam.lookAt(-4, 1.5, 0);
       cam.fov = 60; cam.updateProjectionMatrix();
     }

@@ -38,7 +38,7 @@ export class Room {
     const m = loadMap(o.map);
     this.mapId = m.id; this.mapName = m.def.name;
     this.world = m.world; this.spawns = m.spawns;
-    this.nav = new NavGrid(this.world, ...m.def.bounds, 0.5, 0.42);
+    this.nav = new NavGrid(this.world, ...m.def.bounds, m.def.navCell || 0.5, 0.42);
     this.pveSpawns = m.def.pve.spawns;
     this.ownerId = null;                 // 房主（首个真人；离开后移交）
     this.maxBots = Math.max(0, (o.maxBots | 0) || 12); // 每房机器人上限

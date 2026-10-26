@@ -149,6 +149,9 @@ body.lk #clinks{opacity:.22}
 .seg.team button.on[data-v=BL]{background:rgba(224,82,46,.25);border-color:var(--bl);box-shadow:inset 0 0 0 1px var(--bl)}
 .seg.team button.on[data-v=GR]{background:rgba(47,143,240,.25);border-color:var(--gr);box-shadow:inset 0 0 0 1px var(--gr)}
 .seg button small{display:block;font-size:10.5px;color:var(--hudDim);margin-top:2px}
+#menu .seg[data-k="map"]{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+#menu .seg[data-k="map"] button{text-align:left;padding:9px 10px;line-height:1.5}
+#lobby .seg[data-kg="map"] button{flex:1 1 105px}
 .slider{display:flex;align-items:center;gap:10px}
 .slider input{flex:1;accent-color:var(--accent)}
 .slider span{font-family:var(--num);width:40px;text-align:right}

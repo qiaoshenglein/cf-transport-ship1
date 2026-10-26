@@ -1,4 +1,4 @@
-// 地图自检（headless，无需浏览器）：node test/mapprobe.mjs [ship|desert|town|all]
+// 地图自检（headless，无需浏览器）：node test/mapprobe.mjs [ship|polar|all]
 // 检查：碰撞体数量与合法性、出生点不被埋、基地↔怪口↔补给点在 NavGrid 上连通
 import { NavGrid } from '../src/physics.js';
 import { loadMap } from '../server/mapdata.js';
@@ -14,7 +14,7 @@ for (const id of ids) {
   const def = mapOf(id);
   const rec = loadMap(id);
   const [x0, z0, x1, z1] = def.bounds;
-  const nav = new NavGrid(rec.world, x0, z0, x1, z1, 0.5, R);
+  const nav = new NavGrid(rec.world, x0, z0, x1, z1, def.navCell || 0.5, R);
   const n = rec.world.colliders.length;
   const nan = rec.world.colliders.some((c) => !Number.isFinite(c.x) || !Number.isFinite(c.z) || !Number.isFinite(c.hx) || !Number.isFinite(c.hy) || !Number.isFinite(c.y));
   const inRange = rec.world.colliders.every((c) => c.minX > x0 - 40 && c.maxX < x1 + 40 && c.minZ > z0 - 40 && c.maxZ < z1 + 40);
@@ -29,6 +29,12 @@ for (const id of ids) {
     return !!(path && path.length);
   };
   const fails = [];
+  if (def.sizeClass) {
+    for (const a of rec.spawns.BL) for (const b of rec.spawns.GR) {
+      const d = Math.hypot(b.x - a.x, b.z - a.z);
+      if (!rec.world.raycast(a.x, 1.6, a.z, (b.x - a.x) / d, 0, (b.z - a.z) / d, d, 'sight')) fails.push('双方出生点可直接对狙');
+    }
+  }
   for (const team of ['BL', 'GR']) {
     const base = rec.spawns[team][0];
     for (const s of def.pve.spawns) if (!reach(base, { x: s.x, z: s.z })) fails.push(`${team}基地->怪口 ${s.x},${s.z}`);
@@ -142,7 +148,8 @@ for (const id of ids) {
   if (aoMin > 0.9) fails.push(`AO 没有暗端（最亮 ${aoMin.toFixed(2)}）——接地阴影没生效`);
   if (aoMax > 1.001 || aoMin < 0.4) fails.push(`AO 取值越界 ${aoMin.toFixed(2)}~${aoMax.toFixed(2)}`);
   // 远景剪影：图外的几何不能长出碰撞体，否则玩家会被看不见的墙挡住
-  const farCols = rec.world.colliders.filter((c) => Math.abs(c.x) > 46 || Math.abs(c.z) > 30).length;
+  const [cx0, cz0, cx1, cz1] = def.collisionBounds || def.bounds;
+  const farCols = rec.world.colliders.filter((c) => c.x < cx0 - 1 || c.x > cx1 + 1 || c.z < cz0 - 1 || c.z > cz1 + 1).length;
   if (farCols) fails.push(`远景装饰生成了 ${farCols} 个碰撞体（应纯视觉）`);
   const ok = n > 12 && !nan && inRange && !buried.length && !fails.length && !blockedSup.length;
   if (!ok) bad++;

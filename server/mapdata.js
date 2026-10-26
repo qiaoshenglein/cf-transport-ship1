@@ -13,7 +13,7 @@ function stubTextures() {
     crates: [0, 1, 2, 3].map(() => ({ ...texSet, kind: 'wood' })).concat([0, 1].map(() => ({ ...texSet, kind: 'metal' }))),
     fence: null, grating: null, signs: null,
   };
-  // 新地图自带的贴图（sandStone / plaster / …）服务端一律取空贴图桩
+  // 地图自带的贴图（polarSnow / polarPanel 等）服务端一律取空贴图桩
   return new Proxy(T, { get: (t, k) => (k in t ? t[k] : texSet) });
 }
 

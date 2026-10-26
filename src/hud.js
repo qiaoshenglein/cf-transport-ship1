@@ -39,6 +39,8 @@ export class HUD {
     const touch = matchMedia('(pointer:coarse)').matches;
     this.opts = { team: 'BL', primary: 'ak47', size: 6, diff: 'normal', goal: 50, tod: 'day', map: 'ship', quality: touch ? 'low' : 'high', sens: 1.0, fov: 78, vol: 0.8, gfx: {} };
     try { Object.assign(this.opts, JSON.parse(localStorage.getItem('cf_ship_opts') || '{}')); } catch (e) { /* 忽略 */ }
+    // 删除地图后，旧存档即使离线打开也不能再选中不存在的地图。
+    if (!MAP_IDS.includes(this.opts.map)) { this.opts.map = 'ship'; this.saveOpts(); }
     // 画质细节 = 档位预设打底 + 用户微调；老存档缺哪一项就从档位补，绝不会出现 undefined
     this.opts.gfx = Object.assign(gfxDefaults(this.opts.quality), this.opts.gfx || {});
     this.buildGfx();

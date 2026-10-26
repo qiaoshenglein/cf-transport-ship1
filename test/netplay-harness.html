@@ -377,7 +377,7 @@ try {
     const { World } = await import('/src/physics.js');
     const { MAPS, MAP_IDS, mapOf, suppliesForMap } = await import('/src/maps.js');
     const { CONTAINER_COLORS } = await import('/src/textures.js');
-    ok(MAP_IDS.length >= 3 && MAP_IDS.every((id) => MAPS[id].name && MAPS[id].build && MAPS[id].bounds.length === 4 && MAPS[id].radar.w && MAPS[id].pve.spawns), '地图注册表：每张图都有名字 / 建造函数 / 范围 / 雷达 / PVE 要点');
+    ok(MAP_IDS.join(',') === 'ship,polar,bazaar,depot,turbine,harbor' && MAP_IDS.every((id) => MAPS[id].name && MAPS[id].build && MAPS[id].bounds.length === 4 && MAPS[id].radar.w && MAPS[id].pve.spawns), '地图注册表：六张地图注册且建图数据完整');
     const texSet = { map: null, normalMap: null, roughnessMap: null, emissiveMap: null };
     // 贴图生成写进普通对象：桩 Proxy 对未知键返回真值对象，会让 `if (T.贴图名) return` 直接短路
     const gen = {};
@@ -398,15 +398,14 @@ try {
       const spawnOK = m.spawns.BL.length === 10 && m.spawns.GR.length === 10 && m.spawns.BL.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z) && Number.isFinite(p.yaw));
       ok(nCol > 12 && ground && spawnOK && typeof m.update === 'function', `${def.name}：浏览器侧建图成功`, `碰撞体 ${nCol}，补给 ${suppliesForMap(id).length}`);
     }
-    const sandTx = gen.sandStone && gen.sandStone.map, plasTx = gen.plaster && gen.plaster.map;
-    ok(!!(sandTx && sandTx.isTexture && sandTx.image.width >= 64 && plasTx && plasTx.isTexture && gen.sandGround.normalMap.isTexture), '新地图程序生成贴图（沙岩 / 灰泥 / 石板）真的产出画布纹理');
+    ok(['polarSnow', 'polarPanel', 'polarSign'].every((key) => gen[key]?.map?.isTexture && gen[key].map.image.width >= 64), '极地地图程序生成贴图（雪地 / 墙板 / 标识）真的产出画布纹理');
     ok(!!lobby.querySelector('.seg[data-kg="map"]') && lobby.querySelectorAll('.seg[data-kg="map"] button').length === MAP_IDS.length, '大厅有地图选择器且与注册表同步');
     const dBtn = lobby.querySelector('.seg[data-kg="map"] button[data-v="' + MAP_IDS[1] + '"]');
     dBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     ok(dBtn.classList.contains('on') && lobby.querySelector('#mapDesc').textContent === MAPS[MAP_IDS[1]].desc, '选图会高亮并刷新地图说明');
     lobby.querySelector('.seg[data-kg="map"] button[data-v="ship"]').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    A.renderRooms([{ id: '4', name: '沙房', n: 2, max: 8, goal: 50, state: 'play', timeLeft: 300, map: 'desert', mn: '沙漠灰', bl: 1, gr: 1, score: { BL: 1, GR: 1 } }]);
-    ok(lobby.querySelector('#roomList').innerHTML.includes('沙漠灰'), '房间列表标出地图名');
+    A.renderRooms([{ id: '4', name: '极地房', n: 2, max: 8, goal: 50, state: 'play', timeLeft: 300, map: 'polar', mn: '极地中继站', bl: 1, gr: 1, score: { BL: 1, GR: 1 } }]);
+    ok(lobby.querySelector('#roomList').innerHTML.includes('极地中继站'), '房间列表标出地图名');
     const hudR = new HUD(stubGame());
     hudR.buildRadar(built[MAP_IDS[1]].w2, MAPS[MAP_IDS[1]]);
     const lbl = hudR.root.querySelector('#radarWrap .lbl');
