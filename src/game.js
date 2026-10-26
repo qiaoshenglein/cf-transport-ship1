@@ -17,6 +17,7 @@ import { Bot, BOT_NAMES } from './bots.js';
 import { TouchControls } from './touch.js';
 import { NetGame } from './netplay.js';
 import { preloadBossModels, prewarmBossModels } from './bossmodels.js';
+import { preloadSoldierModels } from './soldiermodels.js';
 import { applyLevel, autoStep, userGfx, gfxDefaults, describeLevel } from './graphics.js';
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => r()));
@@ -89,6 +90,8 @@ export class Game {
           : `载入 BOSS 模型 ${p.done}/${p.n}`));
       prewarmBossModels(this.renderer.renderer, this.renderer.scene, this.renderer.camera);
     } catch (e) { /* 拿不到模型就沿用程序化外观，绝不拦进场 */ }
+    this.hud.loading(0.98, '载入潜伏者 / 保卫者模型');
+    await preloadSoldierModels(p => this.hud.loading(0.98 + p * 0.019, '载入潜伏者 / 保卫者模型'));
     this.hud.loading(1, '完成');
     await nextFrame();
     this.hud.show('menu');
@@ -249,7 +252,7 @@ export class Game {
       if (this.mapId !== want) await this.setMap(want);
       const o = this.opts;
       audio.init(); audio.setVolumes({ master: o.vol }); audio.startAmbient(); audio.playUI('start');
-      for (const a of this.actors) this.renderer.scene.remove(a.soldier.root);
+      for (const a of this.actors) { a.soldier.dispose(); this.renderer.scene.remove(a.soldier.root); }
       for (const t of this.tags) this.renderer.scene.remove(t.sprite);
       for (const n of this.nades) this.renderer.scene.remove(n.mesh);
       this.actors = []; this.nades = []; this.tags = []; this.timers = [];
@@ -374,7 +377,7 @@ export class Game {
     if (this.net) this.net.leave();
     this.playing = false; this.paused = false; this.ended = true;
     audio.stopAmbient(); audio.setLowHealth(false);
-    for (const a of this.actors) this.renderer.scene.remove(a.soldier.root);
+    for (const a of this.actors) { a.soldier.dispose(); this.renderer.scene.remove(a.soldier.root); }
     for (const t of this.tags) this.renderer.scene.remove(t.sprite);
     this.actors = []; this.tags = [];
     this.player = null;

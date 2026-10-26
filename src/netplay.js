@@ -416,7 +416,7 @@ export class NetGame {
     };
     if (this.remotes.has(r.id)) {
       const a = this.remotes.get(r.id);
-      a.name = r.name; a.team = r.team;
+      a.name = r.name; a.team = r.team; a.soldier.setTeam(r.team);
       if (r.bot != null) a.isBot = !!r.bot;
       a.kind = r.kind || null; a.isMonster = !!r.kind; a.isBoss = !!r.boss;
       a.bossHp = r.hp || 0; a.bossHpMax = r.hpMax || 0;
@@ -435,8 +435,8 @@ export class NetGame {
   // 进房前清场：单机 bot、旧对局角色、队友名牌全部移出场景
   clearScene() {
     const g = this.g;
-    for (const a of g.actors) if (a.soldier) { undressSoldier(a.soldier); g.renderer.scene.remove(a.soldier.root); }
-    for (const a of this.remotes.values()) { undressSoldier(a.soldier); g.renderer.scene.remove(a.soldier.root); }
+    for (const a of g.actors) if (a.soldier) { undressSoldier(a.soldier); a.soldier.dispose(); g.renderer.scene.remove(a.soldier.root); }
+    for (const a of this.remotes.values()) { undressSoldier(a.soldier); a.soldier.dispose(); g.renderer.scene.remove(a.soldier.root); }
     for (const t of g.tags) g.renderer.scene.remove(t.sprite);
     for (const [, mesh] of this.nadeMeshes) g.renderer.scene.remove(mesh);
     this.nadeMeshes.clear();
@@ -1003,6 +1003,7 @@ export class NetGame {
     this.g.actors = this.g.actors.filter((x) => x !== a);
     this.g.tags = this.g.tags.filter((t) => { if (t.actor === a) { this.g.renderer.scene.remove(t.sprite); return false; } return true; });
     undressSoldier(a.soldier);
+    a.soldier.dispose();
     this.g.renderer.scene.remove(a.soldier.root);
   }
 
@@ -1285,7 +1286,7 @@ export class NetGame {
     }
     this.inMatch = false; this.reconnecting = false; this.spectate = false;
     this.state = this.state === 'play' ? 'idle' : this.state;
-    for (const a of this.remotes.values()) { undressSoldier(a.soldier); g.renderer.scene.remove(a.soldier.root); }
+    for (const a of this.remotes.values()) { undressSoldier(a.soldier); a.soldier.dispose(); g.renderer.scene.remove(a.soldier.root); }
     this.remotes.clear();
     if (this.me) undressSoldier(this.me.soldier);
     for (const [, mesh] of this.nadeMeshes) g.renderer.scene.remove(mesh);

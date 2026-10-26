@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { buildGunMerged } from './guns.js';
 import { fbm } from './textures.js';
+import { attachSoldierModel, updateSoldierModel, resetSoldierModel, detachSoldierModel } from './soldiermodels.js';
 
 let ATLAS = null;
 function atlas() {
@@ -214,7 +215,7 @@ const _gW = new THREE.Vector3(), _pR = new THREE.Vector3();
 const DOWN = new THREE.Vector3(0, -1, 0);
 
 export class Soldier {
-  constructor(team) {
+  constructor(team, { external = true } = {}) {
     this.team = team;
     this.root = new THREE.Group();
     const geo = buildGeometry(team);
@@ -244,11 +245,18 @@ export class Soldier {
     this.flashT = 0;
     this.glb = null;
     this.bodyVisible = true;
+    this.humanEligible = external;
+    this.human = null;
+    attachSoldierModel(this);
   }
   // 身体显隐只有这一个入口。挂了外部 GLB 身体时，闪烁/幽灵要作用在 GLB 上，程序化身体必须一直藏着，
   // 否则两只身体重叠在一起互相 z-fighting，远程 BOSS 看起来就是在高频抖动。
   setBodyVisible(v) {
     this.bodyVisible = v !== false;
+    const human = this.human && !this.lookKey && !this.glb;
+    // Hide only the old skin material: its bone children still carry the visible gun.
+    this.material.visible = !human;
+    if (this.human) this.human.src.visible = !!human && this.bodyVisible;
     if (this.glb) { this.glb.src.visible = this.bodyVisible; this.mesh.visible = false; }
     else this.mesh.visible = this.bodyVisible;
   }
@@ -262,6 +270,13 @@ export class Soldier {
     // 变异体不扛枪：武器网格隐藏，但锚点仍在，枪口火焰与弹道起点照旧
     this.gun.visible = !this.hideGun;
     this.gunType = id;
+  }
+  setTeam(team) {
+    if (team === this.team) return;
+    this.team = team;
+    this.mesh.geometry = buildGeometry(team);
+    detachSoldierModel(this);
+    attachSoldierModel(this);
   }
   // 两骨骼 IK：让手到达胸骨坐标系下的目标点
   solveArm(side, targetWorld, poleWorld) {
@@ -289,7 +304,7 @@ export class Soldier {
     const B = this.B;
     this.breathT = (this.breathT || 0) + dt;
     if (this.onFrame) this.onFrame(dt, st);   // 外观层用：发光脉动 / 头顶标记旋转
-    if (this.deadT >= 0) { this.updateDeath(dt); return; }
+    if (this.deadT >= 0) { this.updateDeath(dt); updateSoldierModel(this, dt, st); return; }
     // style：怪物与 BOSS 的体态偏置（弓背、摆臂、步频、跛行、悬浮），人类恒为 null
     const S = this.style;
     this.crouchK += ((st.crouch ? 1 : 0) - this.crouchK) * Math.min(1, dt * 10);
@@ -355,6 +370,7 @@ export class Soldier {
     // 架开的双臂（暴君横扫、母体垂臂）：IK 解完再补一点外展角
     if (S && S.armOut) { B.upperArmR.rotation.z -= S.armOut; B.upperArmL.rotation.z += S.armOut; }
     B.handR.rotation.set(0, 0, 0); B.handL.rotation.set(0, 0, 0);
+    updateSoldierModel(this, dt, st);
   }
   kick() { this.recoilK = 1; }
   die(dirX, dirZ, headshot) {
@@ -399,6 +415,14 @@ export class Soldier {
     this.material.transparent = false; this.material.opacity = 1; this.opacity = 1;
     if (this.onFade) this.onFade(1);
     if (this.gun) this.gun.visible = !this.hideGun;
+    resetSoldierModel(this);
+  }
+  dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    detachSoldierModel(this);
+    this.mesh.skeleton.dispose();
+    this.material.dispose();
   }
   // 射线命中测试，返回 {t, part}
   hitTest(o, d, maxT, frame) {

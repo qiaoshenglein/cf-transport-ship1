@@ -1,0 +1,77 @@
+{
+  "apiBase": "https://openapi.tripo3d.ai/v3",
+  "characters": {
+    "bl": {
+      "generation": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:33:36.557Z",
+        "taskId": "03d867a8-7453-4d25-8a35-fb8c55306d6e",
+        "progress": 100,
+        "credits": 20
+      },
+      "check": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:36:02.298Z",
+        "taskId": "af26adc0-7ab2-4879-a323-8b64338b4a7a",
+        "progress": 100,
+        "credits": 0,
+        "riggable": true
+      },
+      "rig": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:36:29.050Z",
+        "taskId": "5a5c6209-eaa3-45dd-9bcb-c9cb9d21865f",
+        "progress": 100,
+        "credits": 25
+      },
+      "animation": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:37:07.359Z",
+        "taskId": "a26c4c4c-c161-46e2-9e29-6f66b35d538e",
+        "progress": 100,
+        "credits": 50
+      }
+    },
+    "gr": {
+      "failedAttempts": [
+        {
+          "status": "failed",
+          "submittedAt": "2026-10-26T05:33:38.739Z",
+          "taskId": "e9f9d108-5555-4f60-9eb6-e88fcfd6b45f",
+          "progress": 100,
+          "errorCode": 2008,
+          "errorMessage": "Content moderation violation"
+        }
+      ],
+      "generation": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:35:29.208Z",
+        "taskId": "ad11755a-b216-4b89-93aa-4dca30bc5a45",
+        "progress": 100,
+        "credits": 20
+      },
+      "check": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:37:09.704Z",
+        "taskId": "5ba9a7b4-82c4-481d-97b2-e6129a963b43",
+        "progress": 100,
+        "credits": 0,
+        "riggable": true
+      },
+      "rig": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:37:50.001Z",
+        "taskId": "83cc2dd6-1c25-40be-8c4c-368de79d69e0",
+        "progress": 100,
+        "credits": 25
+      },
+      "animation": {
+        "status": "success",
+        "submittedAt": "2026-10-26T05:39:14.111Z",
+        "taskId": "068c07d4-617f-44ce-85f8-8c91d95c03ba",
+        "progress": 100,
+        "credits": 50
+      }
+    }
+  }
+}

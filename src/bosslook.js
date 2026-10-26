@@ -401,6 +401,7 @@ export function dressSoldier(sol, key, possessed, optsIn) {
   };
   // 最后一步才挂 GLB：attach 会把上面这个 onFrame 包一层（先跑 FX 脉冲，再推 mixer）
   if (glbBody) attachBossModel(sol, key, possessed ? 1.04 : 1);
+  sol.setBodyVisible(sol.bodyVisible);
 }
 
 export function undressSoldier(sol) {
@@ -434,6 +435,7 @@ export function undressSoldier(sol) {
   }
   sol.lookKey = null; sol.possessed = false; sol.style = null; sol.aura = null; sol.crown = null;
   sol.onFade = null; sol.onFrame = null; sol.hitMat = null;
+  sol.setBodyVisible(sol.bodyVisible);
 }
 
 // 命中盒不变，但受击特效按体质分家：铁皮的爆火星、母体溅酸液、其余见血

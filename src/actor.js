@@ -20,7 +20,7 @@ export class Actor {
     this.streak = 0; this.lastKillT = -99; this.multi = 0;
     this.radarT = 0; this.ping = 20 + ((Math.random() * 40) | 0);
     this.primary = 'ak47';
-    this.soldier = new Soldier(team);
+    this.soldier = new Soldier(team, { external: !isPlayer });
     game.renderer.scene.add(this.soldier.root);
     this.stepDist = 0; this.scoped = 0; this.scopeReady = false; this.scopeT = 0;
     this.lastHurt = -99; this.lastAttacker = null;
