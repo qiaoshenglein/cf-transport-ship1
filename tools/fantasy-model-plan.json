@@ -1,0 +1,28 @@
+{
+  "apiBase": "https://openapi.tripo3d.ai/v3",
+  "generation": {
+    "model": "v3.1-20260211",
+    "face_limit": 16000,
+    "texture": true,
+    "pbr": true,
+    "texture_quality": "standard",
+    "negative_prompt": "text, watermark, logos, characters, people, realistic gritty damage, background landscape, separate floating pieces"
+  },
+  "assets": [
+    {
+      "id": "windmill",
+      "height": 15,
+      "prompt": "A single charming fantasy European windmill building for a bright anime open world game. Ivory plaster cylindrical tower, warm sandstone foundation, rich teal blue conical shingle roof, four large cream cloth wooden windmill sails on the front. Small timber balcony and amber windows, delicate gold trim and ivy at base. Complete freestanding architecture, closed base, strong readable silhouette. Hand painted stylized textures, clean pastel colors, ambient daylight, game ready low polygon prop. No surrounding terrain, no text."
+    },
+    {
+      "id": "windtree",
+      "height": 12,
+      "prompt": "One majestic ancient fantasy oak tree for a bright anime open world game. Thick twisting warm brown trunk, spreading roots on a compact circular grassy base, broad lush layered emerald and yellow-green foliage canopy, tiny golden leaves, subtle turquoise crystal embedded at base. Beautiful storybook silhouette, hand-painted stylized textures, clean saturated pastel palette, low polygon optimized game environment prop. Freestanding isolated tree, no characters, no surrounding landscape."
+    },
+    {
+      "id": "windshrine",
+      "height": 6,
+      "prompt": "A single original fantasy wind shrine for a bright anime adventure game. Elegant ivory limestone pedestal with gold inlay, tall sculpted curling feather wings framing a floating faceted turquoise crystal, small moss patches and pale blue floral details on the stone base. Symmetrical sacred monument, readable strong silhouette, ornate but clean stylized low polygon architecture, hand-painted pastel textures, daylight. Isolated complete freestanding prop, no characters, no ground landscape, no text."
+    }
+  ]
+}

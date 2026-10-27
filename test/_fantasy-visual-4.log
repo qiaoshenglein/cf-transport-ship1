@@ -1,0 +1,10 @@
+[05:01:06] 穿越火线·运输船 联机服务端已启动
+[05:01:06]   本机:   http://localhost:51890
+[05:01:06]   局域网: http://198.19.18.159:51890
+[05:01:06]   局域网: http://10.0.41.8:51890
+[05:01:06]   运维台: http://localhost:51890/admin（未设 ADMIN_TOKEN：后台无任何验证，请把端口收在内网或经反代加锁）
+[05:01:06]   协议版本 2 · 房间上限 32 · WebSocket 路径 /ws
+PASS windgarden 真实渲染、碰撞一致、贴图档位、换图释放 { colliders: 144, triangles: 190762, draws: 38 }
+BROWSER: WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost
+BROWSER: THREE.WebGLRenderer: Context Lost.
+PASS windgarden 最终构建菜单选图、单机开局、小地图、退出

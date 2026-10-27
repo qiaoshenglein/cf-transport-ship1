@@ -377,7 +377,7 @@ try {
     const { World } = await import('/src/physics.js');
     const { MAPS, MAP_IDS, mapOf, suppliesForMap } = await import('/src/maps.js');
     const { CONTAINER_COLORS } = await import('/src/textures.js');
-    ok(MAP_IDS.join(',') === 'ship,polar,bazaar,depot,turbine,harbor' && MAP_IDS.every((id) => MAPS[id].name && MAPS[id].build && MAPS[id].bounds.length === 4 && MAPS[id].radar.w && MAPS[id].pve.spawns), '地图注册表：六张地图注册且建图数据完整');
+    ok(MAP_IDS.join(',') === 'ship,polar,bazaar,depot,turbine,harbor,windgarden' && MAP_IDS.every((id) => MAPS[id].name && MAPS[id].build && MAPS[id].bounds.length === 4 && MAPS[id].radar.w && MAPS[id].pve.spawns), '地图注册表：七张地图注册且建图数据完整');
     const texSet = { map: null, normalMap: null, roughnessMap: null, emissiveMap: null };
     // 贴图生成写进普通对象：桩 Proxy 对未知键返回真值对象，会让 `if (T.贴图名) return` 直接短路
     const gen = {};

@@ -2,9 +2,12 @@ import { createArena, defineArena } from './map_tactical.js';
 
 const palette = { wall: 0x9badae, ground: 0x798080, roof: 0x55727d, trim: 0x344751, accent: 0xd4a34b };
 function build(scene, T, world, opts = {}) {
-  const { k, box, block, pair, building, sign, finish } = createArena(scene, T, world, opts, { id: 'depot', w: 88, d: 56, palette, seed: 8420 });
+  const { k, box, block, pair, building, sign, art, finish } = createArena(scene, T, world, opts, { id: 'depot', w: 88, d: 56, palette, seed: 8420 });
   // 三股轨道只是地面标记，不会绊住玩家或改变导航高度。
   for (const z of [-12, 0, 12]) {
+    box(0, 0.008, z, 84, 0.012, 3.2, 0, 'ground');
+    for (let x = -39; x < 40; x += 1.2) for (const dz of [-1.3, 1.3])
+      k.geom('trim', k.prims.cyl8, x, 0.035, z + dz, 0, k.rnd() * 6, 0, 0.16, 0.055, 0.13);
     for (let x = -40; x < 41; x += 1.5) box(x, 0.02, z, 0.22, 0.04, 2.8, 0, 'trim');
     for (const dz of [-1, 1]) box(0, 0.05, z + dz, 84, 0.07, 0.09, 0, 'steel');
   }
@@ -18,6 +21,7 @@ function build(scene, T, world, opts = {}) {
       for (const dx of [-5.5, 5.5]) k.geom('black', k.prims.cyl, x + dx, 0.5, z + dz, Math.PI / 2, 0, 0, 0.5, 0.2, 0.5);
     }
     for (const dx of [-8.4, 8.4]) block(x + dx, z, 0.8, 0.6, 0.8, 'trim');
+    art.wagon(x, z);
   };
   wagon(-15, -12, 'accent'); wagon(15, 12, 'accent');
   wagon(-14, 5, 'wall'); wagon(14, -5, 'wall');
@@ -31,6 +35,18 @@ function build(scene, T, world, opts = {}) {
     k.rod('accent', x, 5, z, 0, 6.3, z, 0.09);
   }
   for (const z of [-14, 0, 14]) box(0, 6.1, z, 4, 0.1, 0.24, 0, 'lamp');
+  for (let z = -14; z <= 14; z += 4) {
+    k.rod('accent', -5.1, 6, z, 0, 7.4, z, 0.1); k.rod('accent', 0, 7.4, z, 5.1, 6, z, 0.1);
+    k.rod('trim', -5.1, 6, z, 5.1, 6, z, 0.08);
+    for (const x of [-2.5, 0, 2.5]) k.rod('trim', x, 6, z, x, 7.4 - Math.abs(x) * 0.27, z, 0.035);
+  }
+  for (const z of [-12, 12]) {
+    // 接触网跨越轨道，立柱位于既有边界外。
+    for (const x of [-48, 48]) { box(x, 5, z, 0.3, 10, 0.35, 0, 'trim'); k.rod('steel', x, 9, z - 3, x, 9, z + 3, 0.09); }
+    k.rod('steel', -48, 8.8, z, 48, 8.8, z, 0.025);
+    k.rod('steel', -48, 10, z, 48, 10, z, 0.025);
+    for (let x = -40; x <= 40; x += 8) k.rod('steel', x, 8.8, z, x, 10, z, 0.014);
+  }
   pair(k.crate, -5, -22, 3.2, 2.3, 2.6, 1);
   pair(k.crate, -26, -3, 2.6, 1.1, 2.6, 0);
   pair(block, -36, -19, 4, 3, 2.7, 'trim');

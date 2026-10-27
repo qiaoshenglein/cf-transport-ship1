@@ -1,0 +1,128 @@
+[04:56:26] 穿越火线·运输船 联机服务端已启动
+[04:56:26]   本机:   http://localhost:51036
+[04:56:26]   局域网: http://198.19.18.159:51036
+[04:56:26]   局域网: http://10.0.41.8:51036
+[04:56:26]   运维台: http://localhost:51036/admin（未设 ADMIN_TOKEN：后台无任何验证，请把端口收在内网或经反代加锁）
+[04:56:26]   协议版本 2 · 房间上限 32 · WebSocket 路径 /ws
+BROWSER: THREE.WebGLProgram: Shader Error 0 - VALIDATE_STATUS false
+
+Material Name: SkyShader
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: 
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: unspecified
+Material Type: ShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: THREE.WebGLProgram: Shader Error 1282 - VALIDATE_STATUS false
+
+Material Name: OutputShader
+Material Type: RawShaderMaterial
+
+Program Info Log: 
+
+
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glFramebufferRenderbuffer: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glBindRenderbuffer: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glGenRenderbuffers: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glBindRenderbuffer: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glRenderbufferStorageMultisample: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glFramebufferRenderbuffer: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glEnable: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glBindRenderbuffer: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glDebugMessageCallbackKHR: Context has been lost.
+BROWSER: [.WebGL-0x4abc00178400] GL_CONTEXT_LOST_KHR: glBindFramebuffer: Context has been lost.
+BROWSER: WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost
+BROWSER: THREE.WebGLRenderer: Context Lost.
+page.evaluate: Error: WebGL context lost
+    at eval (eval at evaluate (:311:30), <anonymous>:21:60)
+    at async <anonymous>:337:30
+    at D:\game\cf-transport-ship1\test\newmaps.mjs:32:31 {
+  log: []
+}

@@ -1,0 +1,26 @@
+{
+  "apiBase": "https://openapi.tripo3d.ai/v3",
+  "assets": {
+    "windmill": {
+      "status": "success",
+      "submittedAt": "2026-10-27T04:50:36.792Z",
+      "taskId": "404f2609-cdef-4bc7-a158-01b8f1bf0fbb",
+      "progress": 100,
+      "credits": 20
+    },
+    "windtree": {
+      "status": "success",
+      "submittedAt": "2026-10-27T04:50:38.002Z",
+      "taskId": "8b69be0d-ac03-4679-99aa-7f4bc6edc6d3",
+      "progress": 100,
+      "credits": 20
+    },
+    "windshrine": {
+      "status": "success",
+      "submittedAt": "2026-10-27T04:50:39.318Z",
+      "taskId": "0b9e6e1d-9f5f-4059-9aa9-6b2e73b1ef63",
+      "progress": 100,
+      "credits": 20
+    }
+  }
+}

@@ -1,0 +1,13 @@
+[05:03:37] 穿越火线·运输船 联机服务端已启动
+[05:03:37]   本机:   http://localhost:52283
+[05:03:37]   局域网: http://198.19.18.159:52283
+[05:03:37]   局域网: http://10.0.41.8:52283
+[05:03:37]   运维台: http://localhost:52283/admin（未设 ADMIN_TOKEN：后台无任何验证，请把端口收在内网或经反代加锁）
+[05:03:37]   协议版本 2 · 房间上限 32 · WebSocket 路径 /ws
+PASS bazaar 真实渲染、碰撞一致、贴图档位、换图释放 { colliders: 121, triangles: 69379, draws: 41 }
+PASS depot 真实渲染、碰撞一致、贴图档位、换图释放 { colliders: 68, triangles: 41487, draws: 42 }
+PASS turbine 真实渲染、碰撞一致、贴图档位、换图释放 { colliders: 128, triangles: 22891, draws: 42 }
+PASS harbor 真实渲染、碰撞一致、贴图档位、换图释放 { colliders: 221, triangles: 79855, draws: 58 }
+PASS windgarden 真实渲染、碰撞一致、贴图档位、换图释放 { colliders: 144, triangles: 207788, draws: 39 }
+PASS bazaar 最终构建菜单选图、单机开局、小地图、退出
+新地图浏览器测试超时

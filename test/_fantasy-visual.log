@@ -1,0 +1,14 @@
+[04:55:28] 穿越火线·运输船 联机服务端已启动
+[04:55:28]   本机:   http://localhost:50834
+[04:55:28]   局域网: http://198.19.18.159:50834
+[04:55:28]   局域网: http://10.0.41.8:50834
+[04:55:28]   运维台: http://localhost:50834/admin（未设 ADMIN_TOKEN：后台无任何验证，请把端口收在内网或经反代加锁）
+[04:55:28]   协议版本 2 · 房间上限 32 · WebSocket 路径 /ws
+page.evaluate: RangeError: Failed to execute 'createImageData' on 'CanvasRenderingContext2D': Out of memory at ImageData creation
+    at woodCrate (http://127.0.0.1:50834/src/textures.js:366:19)
+    at buildTextures (http://127.0.0.1:50834/src/textures.js:726:15)
+    at eval (eval at evaluate (:1:1), <anonymous>:9:62)
+    at async <anonymous>:337:30
+    at D:\game\cf-transport-ship1\test\newmaps.mjs:19:14 {
+  log: []
+}

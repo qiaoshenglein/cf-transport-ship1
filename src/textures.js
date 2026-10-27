@@ -77,7 +77,16 @@ function grayCanvas(vals, w, h, map) {
   return c;
 }
 
+let textureMaxSize = Infinity;
 function tex(canvas, { srgb = true, repeat = true, aniso = 8 } = {}) {
+  // 画质档位此前只被接收但没有生效，低画质也保留全部 2K 画布。
+  // 每张生成后立即缩小，避免初始化期间积累大尺寸贴图与 GPU 上传。
+  const ratio = Math.min(1, textureMaxSize / Math.max(canvas.width, canvas.height));
+  if (ratio < 1) {
+    const scaled = mkCanvas(Math.max(1, Math.round(canvas.width * ratio)), Math.max(1, Math.round(canvas.height * ratio)));
+    const ctx = scaled.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(canvas, 0, 0, scaled.width, scaled.height);
+    canvas = scaled;
+  }
   const t = new THREE.CanvasTexture(canvas);
   if (srgb) t.colorSpace = THREE.SRGBColorSpace;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -698,6 +707,11 @@ export const SIGN_UV = {
 
 // ============== 汇总 ==============
 export function buildTextures(quality = 'high') {
+  const previous = textureMaxSize;
+  textureMaxSize = quality === 'low' ? 256 : quality === 'medium' ? 512 : Infinity;
+  try { return generateTextures(); } finally { textureMaxSize = previous; }
+}
+function generateTextures() {
   const T = {};
   T.deck = deckTextures();
 

@@ -75,7 +75,7 @@ export class HUD {
           this.setOpt(k, v);
           this.saveOpts();
           this.g.onOption?.(k, v);
-          if (k === 'quality') this.syncControls();   // 细节项跟着档位一起复位
+          if (k === 'quality' || k === 'map') this.syncControls();
           this.g.audio?.playUI('click');
         });
       }
@@ -175,6 +175,10 @@ export class HUD {
     for (const c of this.root.querySelectorAll('#loadCards .card')) c.querySelector('img').src = icons[c.dataset.w] || '';
   }
   syncControls() {
+    const map = MAPS[this.opts.map] || MAPS.ship;
+    this.el.menuMapName.textContent = map.name;
+    this.el.menuMapLabel.textContent = map.menuLabel || (map.id === 'ship' ? 'TRANSPORT SHIP' : 'POLAR RELAY');
+    this.el.menuMapDesc.textContent = map.desc + '。双方基地、多路推进与掩体换位，支持团队竞技及僵尸挑战。';
     for (const s of this.root.querySelectorAll('.seg[data-k]')) {
       const k = s.dataset.k;
       for (const b of s.querySelectorAll('button')) b.classList.toggle('on', String(this.getOpt(k)) === b.dataset.v);
@@ -491,9 +495,9 @@ const TEMPLATE = `
   <div class="menuBox">
     <div class="title">
       <div class="logo">CROSSFIRE · 团队竞技</div>
-      <h1>运输船</h1>
-      <div class="en">TRANSPORT SHIP</div>
-      <p>联合国维和行动在监视非法军火出口时，发现一艘从俄罗斯驶往尼日利亚的可疑货轮。保卫者（Global Risk）奉命登船突击检查，却遭到潜伏者（Black List）伏击。<br>船头船尾两个船舱出生，中路 V 形斜放集装箱、两侧 L 形箱堆，左右各有一条只能从己方出生点进入的集装箱管道，管道顶上就是可以架枪的二楼。</p>
+      <h1 id="menuMapName">运输船</h1>
+      <div class="en" id="menuMapLabel">TRANSPORT SHIP</div>
+      <p id="menuMapDesc">船头船尾双基地，中路集装箱交锋与两侧管道绕行。</p>
       <div class="keys">
         <kbd>W A S D</kbd><span>移动　<kbd>Shift</kbd> 静步　<kbd>空格</kbd> 跳　<kbd>C</kbd> 蹲</span>
         <kbd>鼠标左键</kbd><span>开火　<kbd>右键</kbd> 狙击开镜 / 刀重击</span>

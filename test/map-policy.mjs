@@ -35,7 +35,7 @@ async function client(base) {
   return c;
 }
 try {
-  assert.deepEqual(MAP_IDS, ['ship', 'polar', 'bazaar', 'depot', 'turbine', 'harbor']);
+  assert.deepEqual(MAP_IDS, ['ship', 'polar', 'bazaar', 'depot', 'turbine', 'harbor', 'windgarden']);
   const legacyFile = path.join(dir, 'legacy.json');
   try {
     fs.writeFileSync(legacyFile, JSON.stringify({ version: 1, disabled: ['polar', 'desert'] }));
@@ -45,7 +45,7 @@ try {
     const expanded = createMapPolicy(legacyFile);
     assert.equal(expanded.enabled('ship'), false);
     assert.equal(expanded.enabled('polar'), false);
-    for (const id of ['bazaar', 'depot', 'turbine', 'harbor']) assert.equal(expanded.enabled(id), true);
+    for (const id of ['bazaar', 'depot', 'turbine', 'harbor', 'windgarden']) assert.equal(expanded.enabled(id), true);
     fs.writeFileSync(legacyFile, JSON.stringify({ version: 1, disabled: MAP_IDS }));
     const migrated = createMapPolicy(legacyFile);
     assert.equal(migrated.enabled('ship'), true);
@@ -54,7 +54,7 @@ try {
     fs.writeFileSync(legacyFile, JSON.stringify({ version: 2, disabled: MAP_IDS }));
     assert.throws(() => createMapPolicy(legacyFile), /至少启用/);
   } finally { fs.rmSync(legacyFile, { force: true }); }
-  console.log('PASS 六张地图注册、旧禁用配置迁移并保证可用地图');
+  console.log('PASS 七张地图注册、旧禁用配置迁移并保证可用地图');
   for (let i = 0; !mod.boundPort() && i < 100; i++) await sleep(20);
   const base = `http://127.0.0.1:${mod.boundPort()}`;
   const headers = { 'content-type': 'application/json', 'x-admin-token': process.env.ADMIN_TOKEN };
@@ -79,7 +79,7 @@ try {
   }
   assert.deepEqual((await maps()).map((m) => m.id), MAP_IDS);
   console.log('PASS 已移除地图不可重新启用、建房或匹配');
-  for (const map of ['bazaar', 'depot', 'turbine', 'harbor']) {
+  for (const map of ['bazaar', 'depot', 'turbine', 'harbor', 'windgarden']) {
     assert.equal((await toggle(map, false)).status, 200);
     B.send({ t: 'create', map });
     assert.match((await B.next((m) => m.t === 'err')).m, /禁用/);

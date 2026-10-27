@@ -7,6 +7,7 @@ import { bazaarMap } from './map_bazaar.js';
 import { depotMap } from './map_depot.js';
 import { turbineMap } from './map_turbine.js';
 import { harborMap } from './map_harbor.js';
+import { windgardenMap } from './map_windgarden.js';
 
 export const MAPS = {
   ship: {
@@ -36,7 +37,7 @@ export const MAPS = {
     radar: { w: 84, d: 48, bg: 'rgba(75,98,116,0.95)' }, pve: polarPve,
   },
 };
-Object.assign(MAPS, { bazaar: bazaarMap, depot: depotMap, turbine: turbineMap, harbor: harborMap });
+Object.assign(MAPS, { bazaar: bazaarMap, depot: depotMap, turbine: turbineMap, harbor: harborMap, windgarden: windgardenMap });
 export const MAP_IDS = Object.keys(MAPS);
 export const mapOf = (id) => MAPS[id] || MAPS.ship;
 export const mapName = (id) => mapOf(id).name;

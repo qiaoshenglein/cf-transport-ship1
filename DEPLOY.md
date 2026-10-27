@@ -2,7 +2,7 @@
 
 架构：单个 Node 进程同时提供 **游戏网页（HTTP）+ 联机服务（WebSocket）**，全部游戏判定在权威服务端（30Hz 模拟、延迟补偿命中、反加速限制）。
 
-当前包含「运输船」「极地中继站」「琥珀集市」「货运车站」「涡轮研究所」和超大地图「远海联合港」。所有地图均可在运维后台开启或禁用，至少保留一张开启。新地图默认开启，已有地图的禁用状态保持不变。地图开放设置默认保存到 `data/maps.json`（可用 `MAP_SETTINGS_FILE` 指定路径）。更新代码和构建后需重启已有服务进程，浏览器刷新即可加载新地图列表。新地图布局与尺寸见 `NEW_MAPS.md`。
+当前包含「运输船」「极地中继站」「琥珀集市」「货运车站」「涡轮研究所」、超大地图「远海联合港」和幻想地图「风栖庭院」。所有地图均可在运维后台开启或禁用，至少保留一张开启。新地图默认开启，已有地图的禁用状态保持不变。地图开放设置默认保存到 `data/maps.json`（可用 `MAP_SETTINGS_FILE` 指定路径）。更新代码和构建后需重启已有服务进程，浏览器刷新即可加载新地图列表。布局与尺寸见 `NEW_MAPS.md` 和 `FANTASY_MAP.md`；风栖庭院的三个 `assets/models/fantasy-*.glb` 必须随代码部署。
 
 ## 一、最快上手（本机 / 内网）
 
@@ -70,7 +70,7 @@ location / {
 npm test                     :: 服务端冒烟：房间/移动/射击命中/复活/断线回收 + 网关端到端（约 15s）
 node test\browser-net.mjs    :: 真实 Chrome 联机回归：大厅/预测和解/插值/自动重连（约 25s，需本机装有 Chrome）
 node test\console.mjs        :: 运维后台回归：快照/SSE/六类动作/踢人后旧票据失效/ADMIN_TOKEN 鉴权分支（约 5s）
-node test\mapprobe.mjs all   :: 六张地图可达性与两边公平体检（约 2s，无浏览器依赖）
+node test\mapprobe.mjs all   :: 七张地图可达性与两边公平体检（约 2s，无浏览器依赖）
 node test\assetlab.mjs       :: 建模资产工作台回归：清单/提示词/GLB 实时预览/自动验收三态/本地库持久化（约 9s，需 Chrome）
 node test\boss-glb.mjs       :: BOSS 外部模型接入回归：高度不变量/朝向/动画状态机/双身体闸门（约 10s，需 Chrome）
 node test\gfx.mjs            :: 画质细节回归：降载阶梯与自动调整迟滞（纯 Node）+ 每项设置在真实 WebGL 上生效 + 面板（约 10s，需 Chrome）

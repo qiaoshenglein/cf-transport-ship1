@@ -1,0 +1,17 @@
+[05:08:45] 穿越火线·运输船 联机服务端已启动
+[05:08:45]   本机:   http://localhost:53112
+[05:08:45]   局域网: http://198.19.18.159:53112
+[05:08:45]   局域网: http://10.0.41.8:53112
+[05:08:45]   运维台: http://localhost:53112/admin（未设 ADMIN_TOKEN：后台无任何验证，请把端口收在内网或经反代加锁）
+[05:08:45]   协议版本 2 · 房间上限 32 · WebSocket 路径 /ws
+PASS bazaar 最终构建菜单选图、单机开局、小地图、退出
+PASS depot 最终构建菜单选图、单机开局、小地图、退出
+BROWSER: WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost
+BROWSER: THREE.WebGLRenderer: Context Lost.
+page.evaluate: Error: 开局 WebGL 上下文丢失
+    at eval (eval at evaluate (:311:30), <anonymous>:5:37)
+    at UtilityScript.evaluate (<anonymous>:313:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)
+    at D:\game\cf-transport-ship1\test\newmaps.mjs:85:30 {
+  log: []
+}
